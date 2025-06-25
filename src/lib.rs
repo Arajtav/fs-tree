@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    path::{Component, Path},
+    fs,
+    path::{Component, Path, PathBuf},
 };
 
 #[derive(Debug)]
@@ -83,4 +84,46 @@ mod tests {
         assert_eq!(tree.get(&Path::new("/a/b/d")), 6);
         assert_eq!(tree.get(&Path::new("/a/b")), 11);
     }
+}
+
+pub fn scan_dir(entrypoint: &Path) -> Result<Tree, std::io::Error> {
+    let mut to_scan: Vec<PathBuf> = vec![entrypoint.to_owned()];
+    let mut scanned = Tree::new();
+    while !to_scan.is_empty() {
+        let entry = to_scan.pop().unwrap();
+        let metadata = match fs::metadata(&entry) {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                eprintln!("Error reading metadata for {:?}: {}", entry, err);
+                continue;
+            }
+        };
+
+        if metadata.is_symlink() {
+            continue;
+        }
+
+        if metadata.is_file() {
+            scanned.insert(&entry.canonicalize().unwrap(), metadata.len());
+            continue;
+        }
+
+        if !metadata.is_dir() {
+            continue;
+        }
+
+        let dir = match fs::read_dir(entry.clone()) {
+            Ok(dir) => dir,
+            Err(err) => {
+                eprintln!("Error reading directory {:?}: {}", entry, err);
+                continue;
+            }
+        };
+        to_scan.append(
+            &mut dir
+                .map(|entry| entry.map(|entry| entry.path()))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    Ok(scanned)
 }
