@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    fs,
-    path::{Component, Path, PathBuf},
+    fs::{self, ReadDir},
+    path::Path,
 };
 
 #[derive(Debug)]
@@ -11,90 +11,41 @@ pub enum Tree {
         size: u64,
         children: HashMap<OsString, Tree>,
     },
-    #[allow(dead_code)]
     Leaf(u64),
 }
 
-impl Tree {
-    pub fn new() -> Self {
-        Tree::Node {
-            children: HashMap::new(),
-            size: 0,
+pub fn scan_dir(entry: &Path) -> Tree {
+    let dir = match fs::read_dir(entry) {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("Error reading directory {:?}: {}", entry, err);
+            return Tree::Node {
+                size: 0,
+                children: HashMap::new(),
+            };
         }
-    }
+    };
 
-    // Will break if:
-    // - leaf is replaced with a node, e.g. (/a, 10), (/a/b, 5)
-    // - leaf is modified e.g. (/a, 10), (/a, 5)
-    pub fn insert(&mut self, path: &Path, value: u64) {
-        let mut current = self;
-        for comp in path.components() {
-            match comp {
-                Component::RootDir => continue,
-                Component::Normal(name) => match current {
-                    Tree::Node { children, size } => {
-                        *size += value;
-                        current = children.entry(name.to_os_string()).or_insert(Tree::new());
-                    }
-                    Tree::Leaf(_) => *current = Tree::new(),
-                },
-                _ => panic!("Unsupported path component: {:?}", comp),
-            }
-        }
-        *current = Tree::Leaf(value);
-    }
-
-    #[cfg(test)]
-    pub fn get(&self, path: &Path) -> u64 {
-        let mut current = self;
-        for comp in path.components() {
-            match comp {
-                Component::RootDir => continue,
-                Component::Normal(name) => match current {
-                    Tree::Node { children, .. } => {
-                        current = match children.get(name) {
-                            Some(child) => child,
-                            None => return 0,
-                        };
-                    }
-                    Tree::Leaf(_) => return 0,
-                },
-                _ => panic!("Unsupported path component: {:?}", comp),
-            }
-        }
-        match current {
-            Tree::Node { size, .. } => *size,
-            Tree::Leaf(size) => *size,
-        }
-    }
+    let (size, children) = recursive_scan_dir(dir);
+    Tree::Node { size, children }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, Tree>) {
+    let mut size = 0u64;
+    let mut children = HashMap::new();
+    for entry in dir {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                eprintln!("Error: {err}");
+                continue;
+            }
+        };
 
-    #[test]
-    fn test_basic_insertion() {
-        let mut tree = Tree::new();
-        tree.insert(&Path::new("/a/b/c"), 5);
-        tree.insert(&Path::new("/a/b/d"), 6);
-        tree.insert(&Path::new("/a/e"), 7);
-        tree.insert(&Path::new("/f"), 8);
-        assert_eq!(tree.get(&Path::new("/")), 26);
-        assert_eq!(tree.get(&Path::new("/a/b/d")), 6);
-        assert_eq!(tree.get(&Path::new("/a/b")), 11);
-    }
-}
-
-pub fn scan_dir(entrypoint: &Path) -> Result<Tree, std::io::Error> {
-    let mut to_scan: Vec<PathBuf> = vec![entrypoint.to_owned()];
-    let mut scanned = Tree::new();
-    while !to_scan.is_empty() {
-        let entry = to_scan.pop().unwrap();
-        let metadata = match fs::metadata(&entry) {
+        let metadata = match entry.metadata() {
             Ok(metadata) => metadata,
             Err(err) => {
-                eprintln!("Error reading metadata for {:?}: {}", entry, err);
+                eprintln!("Error reading metadata: {}", err);
                 continue;
             }
         };
@@ -103,27 +54,33 @@ pub fn scan_dir(entrypoint: &Path) -> Result<Tree, std::io::Error> {
             continue;
         }
 
+        let file_name = entry.file_name();
+
         if metadata.is_file() {
-            scanned.insert(&entry.canonicalize().unwrap(), metadata.len());
+            let len = metadata.len();
+            size += len;
+            children.insert(file_name, Tree::Leaf(len));
             continue;
         }
 
-        if !metadata.is_dir() {
-            continue;
-        }
-
-        let dir = match fs::read_dir(entry.clone()) {
+        let dir = match fs::read_dir(entry.path()) {
             Ok(dir) => dir,
             Err(err) => {
                 eprintln!("Error reading directory {:?}: {}", entry, err);
                 continue;
             }
         };
-        to_scan.append(
-            &mut dir
-                .map(|entry| entry.map(|entry| entry.path()))
-                .collect::<Result<Vec<_>, _>>()?,
+
+        let (subtree_size, subtree_children) = recursive_scan_dir(dir);
+        size += subtree_size;
+        children.insert(
+            file_name,
+            Tree::Node {
+                size: subtree_size,
+                children: subtree_children,
+            },
         );
     }
-    Ok(scanned)
+
+    (size, children)
 }

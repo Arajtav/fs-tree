@@ -8,13 +8,11 @@ struct Args {
     entrypoint: PathBuf,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     let args = Args::parse();
 
-    let scanned = scan_dir(&args.entrypoint)?;
+    let scanned = scan_dir(&args.entrypoint);
 
     // todo: print as json
     println!("{scanned:?}");
-
-    Ok(())
 }
