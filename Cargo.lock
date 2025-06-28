@@ -1721,6 +1721,8 @@ dependencies = [
  "clap",
  "gpui",
  "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

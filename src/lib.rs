@@ -1,12 +1,12 @@
+use gpui::hash;
+use rayon::prelude::*;
+use serde::{Serialize, Serializer};
 use std::{
     collections::HashMap,
     ffi::OsString,
     fs::{self, ReadDir},
     path::Path,
 };
-
-use gpui::hash;
-use rayon::prelude::*;
 
 enum Tree {
     Node {
@@ -120,16 +120,29 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, Tree>) {
     (size, children)
 }
 
-#[derive(Debug)]
+fn serialize_os_string<S>(s: &OsString, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&s.to_string_lossy())
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
 pub enum FsTree {
+    #[serde(rename = "dir")]
     Node {
+        #[serde(serialize_with = "serialize_os_string")]
         name: OsString,
         size: u64,
         children: Vec<FsTree>,
     },
+    #[serde(rename = "file")]
     Leaf {
+        #[serde(serialize_with = "serialize_os_string")]
         name: OsString,
         size: u64,
+        #[serde(skip)]
         color: u32,
     },
 }

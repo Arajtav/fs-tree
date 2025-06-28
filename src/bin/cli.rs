@@ -6,6 +6,10 @@ use std::path::PathBuf;
 struct Args {
     /// Location from where to start the scan.
     entrypoint: PathBuf,
+
+    /// Whether the generated json should be formatted.
+    #[arg(long, short)]
+    pretty: bool,
 }
 
 fn main() {
@@ -13,6 +17,14 @@ fn main() {
 
     let scanned = scan_dir(&args.entrypoint);
 
-    // todo: print as json
-    println!("{scanned:?}");
+    let result = if args.pretty {
+        serde_json::to_string_pretty(&scanned)
+    } else {
+        serde_json::to_string(&scanned)
+    };
+
+    match result {
+        Ok(json) => println!("{json}"),
+        Err(err) => eprintln!("Error serializing to JSON: {err}"),
+    }
 }
