@@ -1,7 +1,7 @@
 use clap::Parser;
-use fs_tree::{scan_dir, Tree};
-use gpui::{div, hash, prelude::*, rgb, App, Application, DefiniteLength, Window, WindowOptions};
-use std::path::{Path, PathBuf};
+use fs_tree::{scan_dir, FsTree};
+use gpui::{div, prelude::*, rgb, App, Application, DefiniteLength, Window, WindowOptions};
+use std::path::PathBuf;
 
 enum Rotation {
     Vertical,
@@ -17,29 +17,12 @@ impl Rotation {
     }
 }
 
-fn slight_color_change(base: u32, random: u16) -> u32 {
-    let dr = (((random >> 8) & 0xf) as i8) - 8;
-    let dg = (((random >> 4) & 0xf) as i8) - 8;
-    let db = ((random & 0xf) as i8) - 8;
-
-    let pr = ((base >> 16) & 0xff) as i16;
-    let pg = ((base >> 8) & 0xff) as i16;
-    let pb = (base & 0xff) as i16;
-
-    let r = (pr + dr as i16).clamp(0, 255) as u32;
-    let g = (pg + dg as i16).clamp(0, 255) as u32;
-    let b = (pb + db as i16).clamp(0, 255) as u32;
-
-    (r << 16) | (g << 8) | b
-}
-
-fn render_children(tree: &Tree, color: u32, rotation: Rotation) -> Vec<impl IntoElement> {
+fn render_children(tree: &FsTree, rotation: Rotation) -> Vec<impl IntoElement> {
     match tree {
-        Tree::Leaf(_) => vec![div().size_full().bg(rgb(color))],
-        Tree::Node { children, size } => children
+        FsTree::Leaf { color, .. } => vec![div().size_full().bg(rgb(*color))],
+        FsTree::Node { children, size, .. } => children
             .into_iter()
-            .map(|(name, subtree)| {
-                let color = slight_color_change(color, hash(&name) as u16);
+            .map(|subtree| {
                 let size = DefiniteLength::Fraction(subtree.get_size() as f32 / *size as f32);
                 let element = match rotation {
                     Rotation::Vertical => {
@@ -49,32 +32,22 @@ fn render_children(tree: &Tree, color: u32, rotation: Rotation) -> Vec<impl Into
                         div().overflow_hidden().flex().flex_col().h_full().w(size)
                     }
                 };
-                element.children(render_children(subtree, color, rotation.rotate()))
+                element.children(render_children(subtree, rotation.rotate()))
             })
             .collect(),
     }
 }
 
-struct FsTree {
-    tree: Tree,
-}
+struct Program(pub FsTree);
 
-impl FsTree {
-    pub fn new(entrypoint: &Path) -> Self {
-        Self {
-            tree: scan_dir(entrypoint),
-        }
-    }
-}
-
-impl Render for FsTree {
+impl Render for Program {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .overflow_hidden()
             .flex()
             .flex_row()
-            .children(render_children(&self.tree, 0x7f7f7f, Rotation::Horizontal))
+            .children(render_children(&self.0, Rotation::Horizontal))
     }
 }
 
@@ -90,7 +63,7 @@ fn main() {
     Application::new().run(move |cx: &mut App| {
         cx.activate(true);
         cx.open_window(WindowOptions::default(), |_, cx| {
-            cx.new(|_| FsTree::new(&args.entrypoint))
+            cx.new(|_| Program(scan_dir(&args.entrypoint)))
         })
         .unwrap();
     });

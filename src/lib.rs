@@ -5,10 +5,10 @@ use std::{
     path::Path,
 };
 
+use gpui::hash;
 use rayon::prelude::*;
 
-#[derive(Debug)]
-pub enum Tree {
+enum Tree {
     Node {
         size: u64,
         children: HashMap<OsString, Tree>,
@@ -17,28 +17,46 @@ pub enum Tree {
 }
 
 impl Tree {
-    pub fn get_size(&self) -> u64 {
-        *match self {
-            Tree::Node { size, .. } => size,
-            Tree::Leaf(size) => size,
+    pub fn to_fs_tree(&self, name: OsString) -> FsTree {
+        match self {
+            Tree::Leaf(size) => FsTree::Leaf {
+                size: *size,
+                color: (hash(&name) & 0xffffff) as u32,
+                name,
+            },
+            Tree::Node { size, children } => {
+                let mut children: Vec<FsTree> = children
+                    .iter()
+                    .map(|(child_name, child_tree)| child_tree.to_fs_tree(child_name.clone()))
+                    .collect();
+
+                children.sort_by(|a, b| b.get_size().cmp(&a.get_size()));
+
+                FsTree::Node {
+                    size: *size,
+                    children,
+                    name,
+                }
+            }
         }
     }
 }
 
-pub fn scan_dir(entry: &Path) -> Tree {
+pub fn scan_dir(entry: &Path) -> FsTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
             eprintln!("Error reading directory {:?}: {}", entry, err);
-            return Tree::Node {
+            return FsTree::Node {
+                name: entry.into(),
                 size: 0,
-                children: HashMap::new(),
+                children: Vec::new(),
             };
         }
     };
 
     let (size, children) = recursive_scan_dir(dir);
-    Tree::Node { size, children }
+    Tree::Node { size, children }.to_fs_tree(entry.into())
 }
 
 fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, Tree>) {
@@ -100,4 +118,27 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, Tree>) {
         .collect();
 
     (size, children)
+}
+
+#[derive(Debug)]
+pub enum FsTree {
+    Node {
+        name: OsString,
+        size: u64,
+        children: Vec<FsTree>,
+    },
+    Leaf {
+        name: OsString,
+        size: u64,
+        color: u32,
+    },
+}
+
+impl FsTree {
+    pub fn get_size(&self) -> u64 {
+        *match self {
+            FsTree::Node { size, .. } => size,
+            FsTree::Leaf { size, .. } => size,
+        }
+    }
 }
