@@ -16,6 +16,15 @@ pub enum Tree {
     Leaf(u64),
 }
 
+impl Tree {
+    pub fn get_size(&self) -> u64 {
+        *match self {
+            Tree::Node { size, .. } => size,
+            Tree::Leaf(size) => size,
+        }
+    }
+}
+
 pub fn scan_dir(entry: &Path) -> Tree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
