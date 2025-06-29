@@ -1,53 +1,66 @@
 use clap::Parser;
 use fs_tree::{render_tree::RenderTree, scan_tree::scan_dir};
-use gpui::{div, prelude::*, rgb, App, Application, DefiniteLength, Window, WindowOptions};
-use std::path::PathBuf;
+use gpui::{
+    canvas, div, prelude::*, quad, rgb, rgba, App, Application, Bounds, Pixels, Point, Size,
+    Window, WindowOptions,
+};
+use std::{path::PathBuf, sync::Arc};
 
-enum Rotation {
-    Vertical,
-    Horizontal,
-}
+fn render_children(
+    tree: &RenderTree,
+    horizontal: bool,
+    bounds: Bounds<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    match tree {
+        RenderTree::File {
+            color,
+            x,
+            y,
+            dx,
+            dy,
+            ..
+        } => {
+            let px = bounds.origin.x.0 + x * bounds.size.width.0;
+            let py = bounds.origin.y.0 + y * bounds.size.height.0;
+            let pdx = dx * bounds.size.width.0;
+            let pdy = dy * bounds.size.height.0;
 
-impl Rotation {
-    fn rotate(&self) -> Self {
-        match self {
-            Rotation::Vertical => Rotation::Horizontal,
-            Rotation::Horizontal => Rotation::Vertical,
+            window.paint_quad(quad(
+                Bounds {
+                    origin: Point::new(Pixels(px), Pixels(py)),
+                    size: Size::new(Pixels(pdx), Pixels(pdy)),
+                },
+                0.0,
+                rgb(*color),
+                0.0,
+                rgba(0),
+                gpui::BorderStyle::Solid,
+            ));
+        }
+        RenderTree::Dir { children, .. } => {
+            for child in children {
+                render_children(child, horizontal, bounds, window, cx);
+            }
         }
     }
 }
 
-fn render_children(tree: &RenderTree, rotation: Rotation) -> Vec<impl IntoElement> {
-    match tree {
-        RenderTree::File { color, .. } => vec![div().size_full().bg(rgb(*color))],
-        RenderTree::Dir { children, size, .. } => children
-            .into_iter()
-            .map(|subtree| {
-                let size = DefiniteLength::Fraction(subtree.get_size() as f32 / *size as f32);
-                let element = match rotation {
-                    Rotation::Vertical => {
-                        div().overflow_hidden().flex().flex_row().w_full().h(size)
-                    }
-                    Rotation::Horizontal => {
-                        div().overflow_hidden().flex().flex_col().h_full().w(size)
-                    }
-                };
-                element.children(render_children(subtree, rotation.rotate()))
-            })
-            .collect(),
-    }
-}
-
-struct Program(pub RenderTree);
+struct Program(Arc<RenderTree>);
 
 impl Render for Program {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .overflow_hidden()
-            .flex()
-            .flex_row()
-            .children(render_children(&self.0, Rotation::Horizontal))
+        let children = Arc::clone(&self.0);
+        let canvas = canvas(
+            |_bounds, _window, _cx| (),
+            move |bounds, _prepaint_data, window, cx| {
+                render_children(&children, false, bounds, window, cx);
+            },
+        )
+        .size_full();
+
+        div().size_full().overflow_hidden().child(canvas)
     }
 }
 
@@ -64,10 +77,15 @@ fn main() {
         cx.activate(true);
         cx.open_window(WindowOptions::default(), |_, cx| {
             cx.new(|_| {
-                Program(RenderTree::from_scan_tree(
+                Program(Arc::new(RenderTree::from_scan_tree(
                     scan_dir(&args.entrypoint),
                     args.entrypoint.into(),
-                ))
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                    true,
+                )))
             })
         })
         .unwrap();

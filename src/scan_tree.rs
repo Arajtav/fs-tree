@@ -87,3 +87,12 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
 
     (size, children)
 }
+
+impl ScanTree {
+    pub fn get_size(&self) -> u64 {
+        *match self {
+            ScanTree::Dir { size, .. } => size,
+            ScanTree::File(size) => size,
+        }
+    }
+}
