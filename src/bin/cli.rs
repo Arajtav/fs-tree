@@ -1,5 +1,5 @@
 use clap::Parser;
-use fs_tree::scan_dir;
+use fs_tree::{export_tree::ExportTree, scan_tree::scan_dir};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -15,7 +15,10 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let scanned = scan_dir(&args.entrypoint);
+    let scanned = ExportTree::from_scan_tree(
+        scan_dir(&args.entrypoint),
+        args.entrypoint.to_string_lossy().into(),
+    );
 
     let result = if args.pretty {
         serde_json::to_string_pretty(&scanned)

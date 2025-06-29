@@ -1,5 +1,5 @@
 use clap::Parser;
-use fs_tree::{scan_dir, FsTree};
+use fs_tree::{render_tree::RenderTree, scan_tree::scan_dir};
 use gpui::{div, prelude::*, rgb, App, Application, DefiniteLength, Window, WindowOptions};
 use std::path::PathBuf;
 
@@ -17,10 +17,10 @@ impl Rotation {
     }
 }
 
-fn render_children(tree: &FsTree, rotation: Rotation) -> Vec<impl IntoElement> {
+fn render_children(tree: &RenderTree, rotation: Rotation) -> Vec<impl IntoElement> {
     match tree {
-        FsTree::Leaf { color, .. } => vec![div().size_full().bg(rgb(*color))],
-        FsTree::Node { children, size, .. } => children
+        RenderTree::File { color, .. } => vec![div().size_full().bg(rgb(*color))],
+        RenderTree::Dir { children, size, .. } => children
             .into_iter()
             .map(|subtree| {
                 let size = DefiniteLength::Fraction(subtree.get_size() as f32 / *size as f32);
@@ -38,7 +38,7 @@ fn render_children(tree: &FsTree, rotation: Rotation) -> Vec<impl IntoElement> {
     }
 }
 
-struct Program(pub FsTree);
+struct Program(pub RenderTree);
 
 impl Render for Program {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -63,7 +63,12 @@ fn main() {
     Application::new().run(move |cx: &mut App| {
         cx.activate(true);
         cx.open_window(WindowOptions::default(), |_, cx| {
-            cx.new(|_| Program(scan_dir(&args.entrypoint)))
+            cx.new(|_| {
+                Program(RenderTree::from_scan_tree(
+                    scan_dir(&args.entrypoint),
+                    args.entrypoint.into(),
+                ))
+            })
         })
         .unwrap();
     });
