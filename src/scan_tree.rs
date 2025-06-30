@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fs::{self, ReadDir},
+    os::linux::fs::MetadataExt,
     path::Path,
 };
 
@@ -11,7 +12,12 @@ pub enum ScanTree {
         size: u64,
         children: HashMap<OsString, ScanTree>,
     },
-    File(u64),
+    File {
+        size: u64,
+        access: i64,
+        creation: i64,
+        modification: i64,
+    },
 }
 
 pub fn scan_dir(entry: &Path) -> ScanTree {
@@ -19,7 +25,12 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
         Ok(dir) => dir,
         Err(err) => {
             eprintln!("Error reading directory {:?}: {}", entry, err);
-            return ScanTree::File(0);
+            return ScanTree::File {
+                size: 0,
+                access: 0,
+                creation: 0,
+                modification: 0,
+            };
         }
     };
 
@@ -55,7 +66,16 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
 
             if metadata.is_file() {
                 let len = metadata.len();
-                return Some((file_name, ScanTree::File(len), len));
+                return Some((
+                    file_name,
+                    ScanTree::File {
+                        size: len,
+                        access: metadata.st_atime(),
+                        creation: metadata.st_ctime(), // change but whatever
+                        modification: metadata.st_mtime(),
+                    },
+                    len,
+                ));
             }
 
             let dir = match fs::read_dir(entry.path()) {

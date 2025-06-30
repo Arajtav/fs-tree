@@ -26,7 +26,7 @@ impl ExportTree {
 
     pub fn from_scan_tree(tree: ScanTree, name: String) -> Self {
         match tree {
-            ScanTree::File(size) => ExportTree::File { size, name },
+            ScanTree::File { size, .. } => ExportTree::File { size, name },
             ScanTree::Dir { size, children } => {
                 let mut children: Vec<ExportTree> = children
                     .into_iter()

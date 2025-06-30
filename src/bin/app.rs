@@ -1,7 +1,13 @@
 use clap::Parser;
-use fs_tree::{render_tree::RenderTree, scan_tree::scan_dir};
+use fs_tree::{
+    render_tree::{ColorMode, RenderTree},
+    scan_tree::scan_dir,
+};
 use gpui::{div, prelude::*, rgb, App, Application, DefiniteLength, Window, WindowOptions};
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 enum Rotation {
     Vertical,
@@ -55,6 +61,10 @@ impl Render for Program {
 struct Args {
     /// Location from where to start the scan.
     entrypoint: PathBuf,
+
+    /// Color mode
+    #[clap(default_value = "access")]
+    color: ColorMode,
 }
 
 fn main() {
@@ -67,6 +77,11 @@ fn main() {
                 Program(RenderTree::from_scan_tree(
                     scan_dir(&args.entrypoint),
                     args.entrypoint.into(),
+                    &args.color,
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64,
                 ))
             })
         })
