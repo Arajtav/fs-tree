@@ -27,7 +27,7 @@ fn render_children(tree: &RenderTree, rotation: Rotation) -> Vec<impl IntoElemen
     match tree {
         RenderTree::File { color, .. } => vec![div().size_full().bg(rgb(*color))],
         RenderTree::Dir { children, size, .. } => children
-            .into_iter()
+            .iter()
             .map(|subtree| {
                 let size = DefiniteLength::Fraction(subtree.get_size() as f32 / *size as f32);
                 let element = match rotation {

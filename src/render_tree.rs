@@ -31,8 +31,6 @@ pub enum RenderTree {
 
 #[cfg(feature = "full_metadata")]
 fn grayscale_from_age(now: i64, then: i64) -> u32 {
-    let now = now as i64;
-
     if then > now {
         // some green
         return 0x3eeca9;
@@ -88,11 +86,11 @@ impl RenderTree {
                 let mut children: Vec<RenderTree> = children
                     .into_iter()
                     .map(|(child_name, child_tree)| {
-                        RenderTree::from_scan_tree(child_tree, child_name, &color_mode, now)
+                        RenderTree::from_scan_tree(child_tree, child_name, color_mode, now)
                     })
                     .collect();
 
-                children.sort_by(|a, b| b.get_size().cmp(&a.get_size()));
+                children.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
 
                 RenderTree::Dir {
                     size,

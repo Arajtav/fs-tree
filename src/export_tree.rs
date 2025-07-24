@@ -35,7 +35,7 @@ impl ExportTree {
                     })
                     .collect();
 
-                children.sort_by(|a, b| b.get_size().cmp(&a.get_size()));
+                children.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
 
                 ExportTree::Dir {
                     size,

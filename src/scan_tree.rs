@@ -29,7 +29,7 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("Error reading directory {:?}: {}", entry, err);
+            eprintln!("Error reading directory {entry:?}: {err}");
             #[cfg(feature = "full_metadata")]
             return ScanTree::File {
                 size: 0,
@@ -61,7 +61,7 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
             let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(err) => {
-                    eprintln!("Error reading metadata: {}", err);
+                    eprintln!("Error reading metadata: {err}");
                     return None;
                 }
             };
@@ -92,7 +92,7 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
             let dir = match fs::read_dir(entry.path()) {
                 Ok(dir) => dir,
                 Err(err) => {
-                    eprintln!("Error reading directory {:?}: {}", entry, err);
+                    eprintln!("Error reading directory {entry:?}: {err}");
                     return None;
                 }
             };
