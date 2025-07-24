@@ -1,6 +1,5 @@
-use serde::Serialize;
-
 use crate::scan_tree::ScanTree;
+use serde::Serialize;
 
 #[derive(Serialize)]
 #[serde(untagged)]

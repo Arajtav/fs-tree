@@ -1,5 +1,4 @@
 use clap::ValueEnum;
-use gpui::hash;
 use std::ffi::OsString;
 
 use crate::scan_tree::ScanTree;
@@ -25,15 +24,15 @@ pub enum RenderTree {
     File {
         name: OsString,
         size: u64,
-        color: u32,
+        color: [f32; 4],
     },
 }
 
 #[cfg(feature = "full_metadata")]
-fn grayscale_from_age(now: i64, then: i64) -> u32 {
+fn grayscale_from_age(now: i64, then: i64) -> [f32; 4] {
     if then > now {
         // some green
-        return 0x3eeca9;
+        return [0.243, 0.925, 0.663, 1.0];
     }
 
     const MAX_AGE: f32 = 5.0 * 365.0 * 24.0 * 60.0 * 60.0;
@@ -41,9 +40,9 @@ fn grayscale_from_age(now: i64, then: i64) -> u32 {
     let normalized_age = ((now - then) as f32 / MAX_AGE).min(1.0);
 
     let fade = 1.0 - (normalized_age * 9.0 + 1.0).log10();
-    let gray = (fade.clamp(0.0, 1.0) * 255.0).round() as u32;
+    let gray = fade.clamp(0.0, 1.0);
 
-    (gray << 16) | (gray << 8) | gray
+    [gray, gray, gray, 1.0]
 }
 
 impl RenderTree {
@@ -77,7 +76,7 @@ impl RenderTree {
                     ColorMode::Creation => grayscale_from_age(now, creation),
                     #[cfg(feature = "full_metadata")]
                     ColorMode::Modification => grayscale_from_age(now, modification),
-                    ColorMode::Debug => (hash(&size) & 0xffffff) as u32,
+                    ColorMode::Debug => [0.5, 0.5, 0.5, 1.0],
                 };
 
                 RenderTree::File { size, color, name }

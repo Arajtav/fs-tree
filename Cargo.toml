@@ -4,11 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytemuck = "1.23.1"
 clap = { version = "4.5.40", features = ["derive"] }
+pollster = "0.4.0"
 rayon = "1.10.0"
-gpui = { git = "https://github.com/zed-industries/zed" }
-serde = "1.0.219"
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+wgpu = "26.0.1"
+winit = "0.30.11"
 
 [features]
 full_metadata = []
