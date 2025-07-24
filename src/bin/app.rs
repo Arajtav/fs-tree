@@ -63,7 +63,13 @@ struct Args {
     entrypoint: PathBuf,
 
     /// Color mode
+    #[cfg(feature = "full_metadata")]
     #[clap(default_value = "access")]
+    color: ColorMode,
+
+    /// Color mode
+    #[cfg(not(feature = "full_metadata"))]
+    #[clap(default_value = "debug")]
     color: ColorMode,
 }
 

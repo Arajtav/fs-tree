@@ -3,9 +3,11 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fs::{self, ReadDir},
-    os::linux::fs::MetadataExt,
     path::Path,
 };
+
+#[cfg(feature = "full_metadata")]
+use std::os::linux::fs::MetadataExt;
 
 pub enum ScanTree {
     Dir {
@@ -14,8 +16,11 @@ pub enum ScanTree {
     },
     File {
         size: u64,
+        #[cfg(feature = "full_metadata")]
         access: i64,
+        #[cfg(feature = "full_metadata")]
         creation: i64,
+        #[cfg(feature = "full_metadata")]
         modification: i64,
     },
 }
@@ -25,12 +30,15 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
         Ok(dir) => dir,
         Err(err) => {
             eprintln!("Error reading directory {:?}: {}", entry, err);
+            #[cfg(feature = "full_metadata")]
             return ScanTree::File {
                 size: 0,
                 access: 0,
                 creation: 0,
                 modification: 0,
             };
+            #[cfg(not(feature = "full_metadata"))]
+            return ScanTree::File { size: 0 };
         }
     };
 
@@ -68,12 +76,15 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
                 let len = metadata.len();
                 return Some((
                     file_name,
+                    #[cfg(feature = "full_metadata")]
                     ScanTree::File {
                         size: len,
                         access: metadata.st_atime(),
                         creation: metadata.st_ctime(), // change but whatever
                         modification: metadata.st_mtime(),
                     },
+                    #[cfg(not(feature = "full_metadata"))]
+                    ScanTree::File { size: len },
                     len,
                 ));
             }

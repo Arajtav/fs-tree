@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use gpui::hash;
 use std::ffi::OsString;
 
 use crate::scan_tree::ScanTree;
@@ -6,9 +7,13 @@ use crate::scan_tree::ScanTree;
 #[derive(Debug, Clone, ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum ColorMode {
+    #[cfg(feature = "full_metadata")]
     Access,
+    #[cfg(feature = "full_metadata")]
     Modification,
+    #[cfg(feature = "full_metadata")]
     Creation,
+    Debug,
 }
 
 pub enum RenderTree {
@@ -24,6 +29,7 @@ pub enum RenderTree {
     },
 }
 
+#[cfg(feature = "full_metadata")]
 fn grayscale_from_age(now: i64, then: i64) -> u32 {
     let now = now as i64;
 
@@ -59,18 +65,22 @@ impl RenderTree {
         match tree {
             ScanTree::File {
                 size,
+                #[cfg(feature = "full_metadata")]
                 access,
+                #[cfg(feature = "full_metadata")]
                 creation,
+                #[cfg(feature = "full_metadata")]
                 modification,
             } => {
-                let color = grayscale_from_age(
-                    now,
-                    match color_mode {
-                        ColorMode::Access => access,
-                        ColorMode::Creation => creation,
-                        ColorMode::Modification => modification,
-                    },
-                );
+                let color = match color_mode {
+                    #[cfg(feature = "full_metadata")]
+                    ColorMode::Access => grayscale_from_age(now, access),
+                    #[cfg(feature = "full_metadata")]
+                    ColorMode::Creation => grayscale_from_age(now, creation),
+                    #[cfg(feature = "full_metadata")]
+                    ColorMode::Modification => grayscale_from_age(now, modification),
+                    ColorMode::Debug => (hash(&size) & 0xffffff) as u32,
+                };
 
                 RenderTree::File { size, color, name }
             }
