@@ -348,7 +348,6 @@ fn main() {
     let args = Args::parse();
     let render_tree = RenderTree::from_scan_tree(
         scan_dir(&args.entrypoint),
-        args.entrypoint.into(),
         &args.color,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

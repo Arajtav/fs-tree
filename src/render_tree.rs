@@ -53,15 +53,11 @@ impl RenderTree {
         }
     }
 
-    pub fn from_scan_tree(
-        tree: ScanTree,
-        name: OsString,
-        color_mode: &ColorMode,
-        now: i64,
-    ) -> Self {
+    pub fn from_scan_tree(tree: ScanTree, color_mode: &ColorMode, now: i64) -> Self {
         match tree {
             ScanTree::File {
                 size,
+                name,
                 #[cfg(feature = "full_metadata")]
                 access,
                 #[cfg(feature = "full_metadata")]
@@ -81,15 +77,15 @@ impl RenderTree {
 
                 RenderTree::File { size, color, name }
             }
-            ScanTree::Dir { size, children } => {
-                let mut children: Vec<RenderTree> = children
+            ScanTree::Dir {
+                size,
+                name,
+                children,
+            } => {
+                let children: Vec<RenderTree> = children
                     .into_iter()
-                    .map(|(child_name, child_tree)| {
-                        RenderTree::from_scan_tree(child_tree, child_name, color_mode, now)
-                    })
+                    .map(|e| RenderTree::from_scan_tree(e, color_mode, now))
                     .collect();
-
-                children.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
 
                 RenderTree::Dir {
                     size,

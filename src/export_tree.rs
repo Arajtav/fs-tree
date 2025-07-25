@@ -22,26 +22,24 @@ impl ExportTree {
             ExportTree::File { size, .. } => size,
         }
     }
+}
 
-    pub fn from_scan_tree(tree: ScanTree, name: String) -> Self {
+impl From<ScanTree> for ExportTree {
+    fn from(tree: ScanTree) -> Self {
         match tree {
-            ScanTree::File { size, .. } => ExportTree::File { size, name },
-            ScanTree::Dir { size, children } => {
-                let mut children: Vec<ExportTree> = children
-                    .into_iter()
-                    .map(|(child_name, child_tree)| {
-                        ExportTree::from_scan_tree(child_tree, child_name.to_string_lossy().into())
-                    })
-                    .collect();
-
-                children.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
-
-                ExportTree::Dir {
-                    size,
-                    children,
-                    name,
-                }
-            }
+            ScanTree::File { size, name, .. } => ExportTree::File {
+                size,
+                name: name.to_string_lossy().into(),
+            },
+            ScanTree::Dir {
+                size,
+                name,
+                children,
+            } => ExportTree::Dir {
+                size,
+                children: children.into_iter().map(ExportTree::from).collect(),
+                name: name.to_string_lossy().into(),
+            },
         }
     }
 }

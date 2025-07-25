@@ -15,10 +15,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let scanned = ExportTree::from_scan_tree(
-        scan_dir(&args.entrypoint),
-        args.entrypoint.to_string_lossy().into(),
-    );
+    let scanned = ExportTree::from(scan_dir(&args.entrypoint));
 
     let result = if args.pretty {
         serde_json::to_string_pretty(&scanned)

@@ -1,8 +1,7 @@
 use rayon::prelude::*;
 use std::{
-    collections::HashMap,
     ffi::OsString,
-    fs::{self, ReadDir},
+    fs::{self},
     path::Path,
 };
 
@@ -11,10 +10,12 @@ use std::os::linux::fs::MetadataExt;
 
 pub enum ScanTree {
     Dir {
+        name: OsString,
         size: u64,
-        children: HashMap<OsString, ScanTree>,
+        children: Vec<ScanTree>,
     },
     File {
+        name: OsString,
         size: u64,
         #[cfg(feature = "full_metadata")]
         access: i64,
@@ -25,29 +26,37 @@ pub enum ScanTree {
     },
 }
 
+impl ScanTree {
+    fn get_size(&self) -> u64 {
+        match *self {
+            ScanTree::Dir { size, .. } => size,
+            ScanTree::File { size, .. } => size,
+        }
+    }
+}
+
 pub fn scan_dir(entry: &Path) -> ScanTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("Error reading directory {entry:?}: {err}");
+            eprint!("Error reading directory {entry:?}: {err}");
             #[cfg(feature = "full_metadata")]
             return ScanTree::File {
                 size: 0,
+                name: "".into(),
                 access: 0,
                 creation: 0,
                 modification: 0,
             };
             #[cfg(not(feature = "full_metadata"))]
-            return ScanTree::File { size: 0 };
+            return ScanTree::File {
+                size: 0,
+                name: "".into(),
+            };
         }
     };
 
-    let (size, children) = recursive_scan_dir(dir);
-    ScanTree::Dir { size, children }
-}
-
-fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
-    let results: Vec<(OsString, ScanTree, u64)> = dir
+    let mut results: Vec<ScanTree> = dir
         .par_bridge()
         .filter_map(|entry_res| {
             let entry = match entry_res {
@@ -70,51 +79,32 @@ fn recursive_scan_dir(dir: ReadDir) -> (u64, HashMap<OsString, ScanTree>) {
                 return None;
             }
 
-            let file_name = entry.file_name();
-
             if metadata.is_file() {
                 let len = metadata.len();
-                return Some((
-                    file_name,
+                return Some(
                     #[cfg(feature = "full_metadata")]
                     ScanTree::File {
                         size: len,
+                        name: entry.file_name(),
                         access: metadata.st_atime(),
                         creation: metadata.st_ctime(), // change but whatever
                         modification: metadata.st_mtime(),
                     },
                     #[cfg(not(feature = "full_metadata"))]
-                    ScanTree::File { size: len },
-                    len,
-                ));
+                    ScanTree::File {
+                        size: len,
+                        name: entry.file_name(),
+                    },
+                );
             }
 
-            let dir = match fs::read_dir(entry.path()) {
-                Ok(dir) => dir,
-                Err(err) => {
-                    eprintln!("Error reading directory {entry:?}: {err}");
-                    return None;
-                }
-            };
-
-            let (subtree_size, subtree_children) = recursive_scan_dir(dir);
-
-            Some((
-                file_name,
-                ScanTree::Dir {
-                    size: subtree_size,
-                    children: subtree_children,
-                },
-                subtree_size,
-            ))
+            Some(scan_dir(&entry.path()))
         })
         .collect();
-
-    let size = results.iter().map(|(_, _, sz)| *sz).sum();
-    let children = results
-        .into_iter()
-        .map(|(name, tree, _)| (name, tree))
-        .collect();
-
-    (size, children)
+    results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
+    ScanTree::Dir {
+        name: entry.components().next_back().unwrap().as_os_str().into(),
+        size: results.iter().map(|e| e.get_size()).sum(),
+        children: results,
+    }
 }
