@@ -48,13 +48,33 @@ struct Instance {
     color: [f32; 4],
 }
 
+fn highest_aspect_ratio(row: &[u64], row_area: f32, w: f32, h: f32) -> f32 {
+    if row.is_empty() || row_area == 0.0 {
+        return f32::INFINITY;
+    }
+
+    let total_size = row.iter().sum::<u64>() as f32;
+    row.iter()
+        .map(|&child| {
+            let child = child as f32;
+
+            let (w, h) = if w >= h {
+                (row_area / h, child * h / total_size)
+            } else {
+                (child * w / total_size, row_area / w)
+            };
+
+            (w / h).max(h / w)
+        })
+        .fold(0.0, |acc, x| acc.max(x))
+}
+
 fn recursive_compute_layout(
     tree: &RenderTree,
-    x: f32,
-    y: f32,
-    dx: f32,
-    dy: f32,
-    horizontal: bool,
+    mut x: f32,
+    mut y: f32,
+    mut dx: f32,
+    mut dy: f32,
     out: &mut Vec<Instance>,
 ) {
     match tree {
@@ -67,22 +87,101 @@ fn recursive_compute_layout(
         }
 
         RenderTree::Dir { size, children, .. } => {
-            let mut offset = 0.0;
-            for child in children {
-                let child_size = child.get_size();
-                if child_size == 0 {
-                    continue;
+            let size = *size as f32;
+
+            let total_area = dx * dy;
+
+            let mut base_index = 0;
+
+            while base_index < children.len() {
+                let mut current_total = children[base_index].get_size();
+                while current_total == 0 && base_index < children.len() {
+                    base_index += 1;
+                    current_total = children[base_index].get_size();
                 }
 
-                if horizontal {
-                    let child_dx = dx * child_size as f32 / *size as f32;
-                    recursive_compute_layout(child, x + offset, y, child_dx, dy, false, out);
-                    offset += child_dx;
-                } else {
-                    let child_dy = dy * child_size as f32 / *size as f32;
-                    recursive_compute_layout(child, x, y + offset, dx, child_dy, true, out);
-                    offset += child_dy;
+                if base_index >= children.len() {
+                    break;
                 }
+
+                let mut current_row: Vec<&RenderTree> = vec![&children[base_index]];
+                let mut offset_index = 1;
+
+                while base_index + offset_index < children.len() {
+                    let current_child = &children[base_index + offset_index];
+                    let current_child_size = current_child.get_size();
+
+                    if current_child_size == 0 {
+                        offset_index += 1;
+                        continue;
+                    }
+
+                    let mut sizes: Vec<u64> = current_row.iter().map(|e| e.get_size()).collect();
+
+                    let current_aspect = highest_aspect_ratio(
+                        &sizes,
+                        total_area * (current_total as f32 / size),
+                        dx,
+                        dy,
+                    );
+
+                    sizes.push(current_child_size);
+                    let next_total = current_total + current_child_size;
+
+                    let next_aspect = highest_aspect_ratio(
+                        &sizes,
+                        total_area * (next_total as f32 / size),
+                        dx,
+                        dy,
+                    );
+
+                    if next_aspect > current_aspect {
+                        break;
+                    }
+
+                    current_row.push(current_child);
+                    current_total = next_total;
+                    offset_index += 1;
+                }
+
+                let current_total = current_total as f32;
+
+                let row_length = total_area * current_total / (size * dx.min(dy));
+
+                let mut offset = 0.0;
+                for child in current_row.iter() {
+                    let child_size = child.get_size() as f32;
+                    if dx >= dy {
+                        recursive_compute_layout(
+                            child,
+                            x,
+                            y + offset,
+                            row_length,
+                            dy * child_size / current_total,
+                            out,
+                        );
+                        offset += dy * child_size / current_total;
+                    } else {
+                        recursive_compute_layout(
+                            child,
+                            x + offset,
+                            y,
+                            dx * child_size / current_total,
+                            row_length,
+                            out,
+                        );
+                        offset += dx * child_size / current_total;
+                    }
+                }
+
+                if dx >= dy {
+                    x += row_length;
+                    dx -= row_length;
+                } else {
+                    y += row_length;
+                    dy -= row_length;
+                }
+                base_index += offset_index;
             }
         }
     }
@@ -170,7 +269,7 @@ impl ApplicationHandler for App {
         });
 
         let mut instances = Vec::new();
-        recursive_compute_layout(&self.data, 0.0, 0.0, 1.0, 1.0, true, &mut instances);
+        recursive_compute_layout(&self.data, 0.0, 0.0, 1.0, 1.0, &mut instances);
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
