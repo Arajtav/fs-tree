@@ -1,4 +1,4 @@
-use crate::scan_tree::ScanTree;
+use fs_tree_shared::ScanTree;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -13,15 +13,6 @@ pub enum ExportTree {
         name: String,
         size: u64,
     },
-}
-
-impl ExportTree {
-    pub fn get_size(&self) -> u64 {
-        *match self {
-            ExportTree::Dir { size, .. } => size,
-            ExportTree::File { size, .. } => size,
-        }
-    }
 }
 
 impl From<ScanTree> for ExportTree {

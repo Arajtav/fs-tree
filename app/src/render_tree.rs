@@ -1,34 +1,29 @@
 use clap::ValueEnum;
-use std::{ffi::OsString, path::Path};
+use fs_tree_shared::ScanTree;
+use std::path::Path;
 
-use crate::{extensions::get_color_from_extension, scan_tree::ScanTree};
+use crate::extensions::get_color_from_extension;
 
 #[derive(Debug, Clone, ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum ColorMode {
-    #[cfg(feature = "full_metadata")]
     Access,
-    #[cfg(feature = "full_metadata")]
     Modification,
-    #[cfg(feature = "full_metadata")]
     Creation,
     Extension,
 }
 
 pub enum RenderTree {
     Dir {
-        name: OsString,
         size: u64,
         children: Vec<RenderTree>,
     },
     File {
-        name: OsString,
         size: u64,
         color: [f32; 3],
     },
 }
 
-#[cfg(feature = "full_metadata")]
 fn grayscale_from_age(now: i64, then: i64) -> [f32; 3] {
     if then > now {
         // some green
@@ -58,42 +53,28 @@ impl RenderTree {
             ScanTree::File {
                 size,
                 name,
-                #[cfg(feature = "full_metadata")]
                 access,
-                #[cfg(feature = "full_metadata")]
                 creation,
-                #[cfg(feature = "full_metadata")]
                 modification,
             } => {
                 let color = match color_mode {
-                    #[cfg(feature = "full_metadata")]
                     ColorMode::Access => grayscale_from_age(now, access),
-                    #[cfg(feature = "full_metadata")]
                     ColorMode::Creation => grayscale_from_age(now, creation),
-                    #[cfg(feature = "full_metadata")]
                     ColorMode::Modification => grayscale_from_age(now, modification),
                     ColorMode::Extension => {
                         get_color_from_extension(Path::new(&name).extension().unwrap_or_default())
                     }
                 };
 
-                RenderTree::File { size, color, name }
+                RenderTree::File { size, color }
             }
-            ScanTree::Dir {
-                size,
-                name,
-                children,
-            } => {
+            ScanTree::Dir { size, children, .. } => {
                 let children: Vec<RenderTree> = children
                     .into_iter()
                     .map(|e| RenderTree::from_scan_tree(e, color_mode, now))
                     .collect();
 
-                RenderTree::Dir {
-                    size,
-                    children,
-                    name,
-                }
+                RenderTree::Dir { size, children }
             }
         }
     }

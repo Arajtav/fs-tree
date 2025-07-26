@@ -1,5 +1,8 @@
+mod export_tree;
+
 use clap::Parser;
-use fs_tree::{export_tree::ExportTree, scan_tree::scan_dir};
+use export_tree::ExportTree;
+use fs_tree_shared::scan_dir;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]

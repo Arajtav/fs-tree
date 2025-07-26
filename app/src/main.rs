@@ -1,3 +1,6 @@
+mod extensions;
+mod render_tree;
+
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -5,10 +8,8 @@ use std::{
 };
 
 use clap::Parser;
-use fs_tree::{
-    render_tree::{ColorMode, RenderTree},
-    scan_tree::scan_dir,
-};
+use fs_tree_shared::scan_dir;
+use render_tree::{ColorMode, RenderTree};
 use wgpu::{util::DeviceExt, DeviceDescriptor, PowerPreference, SurfaceConfiguration};
 use winit::{
     application::ApplicationHandler,
@@ -279,7 +280,7 @@ impl ApplicationHandler for App {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
