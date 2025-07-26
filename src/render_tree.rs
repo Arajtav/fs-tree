@@ -1,7 +1,7 @@
 use clap::ValueEnum;
-use std::ffi::OsString;
+use std::{ffi::OsString, path::Path};
 
-use crate::scan_tree::ScanTree;
+use crate::{extensions::get_color_from_extension, scan_tree::ScanTree};
 
 #[derive(Debug, Clone, ValueEnum)]
 #[clap(rename_all = "lower")]
@@ -12,7 +12,7 @@ pub enum ColorMode {
     Modification,
     #[cfg(feature = "full_metadata")]
     Creation,
-    Debug,
+    Extension,
 }
 
 pub enum RenderTree {
@@ -24,15 +24,15 @@ pub enum RenderTree {
     File {
         name: OsString,
         size: u64,
-        color: [f32; 4],
+        color: [f32; 3],
     },
 }
 
 #[cfg(feature = "full_metadata")]
-fn grayscale_from_age(now: i64, then: i64) -> [f32; 4] {
+fn grayscale_from_age(now: i64, then: i64) -> [f32; 3] {
     if then > now {
         // some green
-        return [0.243, 0.925, 0.663, 1.0];
+        return [0.243, 0.925, 0.663];
     }
 
     const MAX_AGE: f32 = 5.0 * 365.0 * 24.0 * 60.0 * 60.0;
@@ -42,7 +42,7 @@ fn grayscale_from_age(now: i64, then: i64) -> [f32; 4] {
     let fade = 1.0 - (normalized_age * 9.0 + 1.0).log10();
     let gray = fade.clamp(0.0, 1.0);
 
-    [gray, gray, gray, 1.0]
+    [gray, gray, gray]
 }
 
 impl RenderTree {
@@ -72,7 +72,9 @@ impl RenderTree {
                     ColorMode::Creation => grayscale_from_age(now, creation),
                     #[cfg(feature = "full_metadata")]
                     ColorMode::Modification => grayscale_from_age(now, modification),
-                    ColorMode::Debug => [0.5, 0.5, 0.5, 1.0],
+                    ColorMode::Extension => {
+                        get_color_from_extension(Path::new(&name).extension().unwrap_or_default())
+                    }
                 };
 
                 RenderTree::File { size, color, name }

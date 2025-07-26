@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 bytemuck = "1.23.1"
 clap = { version = "4.5.40", features = ["derive"] }
+phf = { version = "0.12.1", features = ["macros"] }
 pollster = "0.4.0"
 rayon = "1.10.0"
 serde = { version = "1.0.219", features = ["derive"] }
