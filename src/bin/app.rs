@@ -82,7 +82,7 @@ fn recursive_compute_layout(
             out.push(Instance {
                 position: [x, y],
                 size: [dx, dy],
-                color: *color,
+                color: [color[0], color[1], color[2], 1.0],
             });
         }
 
@@ -430,13 +430,7 @@ struct Args {
     entrypoint: PathBuf,
 
     /// Color mode
-    #[cfg(feature = "full_metadata")]
-    #[clap(default_value = "access")]
-    color: ColorMode,
-
-    /// Color mode
-    #[cfg(not(feature = "full_metadata"))]
-    #[clap(default_value = "debug")]
+    #[clap(default_value = "extension")]
     color: ColorMode,
 }
 
