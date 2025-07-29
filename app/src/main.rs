@@ -77,13 +77,14 @@ fn recursive_compute_layout(
     mut y: f32,
     mut dx: f32,
     mut dy: f32,
+    aspect_ratio: f32,
     out: &mut Vec<Instance>,
 ) {
     match tree {
         RenderTree::File { color, .. } => {
             out.push(Instance {
-                position: [x, y],
-                size: [dx, dy],
+                position: [x, y * aspect_ratio],
+                size: [dx, dy * aspect_ratio],
                 color: [color[0], color[1], color[2], 1.0],
             });
         }
@@ -160,6 +161,7 @@ fn recursive_compute_layout(
                             y + offset,
                             row_length,
                             dy * child_size / current_total,
+                            aspect_ratio,
                             out,
                         );
                         offset += dy * child_size / current_total;
@@ -170,6 +172,7 @@ fn recursive_compute_layout(
                             y,
                             dx * child_size / current_total,
                             row_length,
+                            aspect_ratio,
                             out,
                         );
                         offset += dx * child_size / current_total;
@@ -270,13 +273,23 @@ impl ApplicationHandler for App {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        // I guess the size could be { 0, 0 }, shouldn't break anything though.
         let mut instances = Vec::new();
-        recursive_compute_layout(&self.data, 0.0, 0.0, 1.0, 1.0, &mut instances);
+        recursive_compute_layout(
+            &self.data,
+            0.0,
+            0.0,
+            1.0,
+            size.height as f32 / size.width as f32,
+            size.width as f32 / size.height as f32,
+            &mut instances,
+        );
+        dbg!(instances.len());
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -354,6 +367,8 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
+            // there is enough delay for at least one frame to render before the layout changes
+            // apparently it is a wayland problem, but it would be really nice if there was a way to fix it
             WindowEvent::Resized(new_size) => {
                 let render_data = match self.render_data.as_mut() {
                     Some(render_data) => render_data,
@@ -361,8 +376,32 @@ impl ApplicationHandler for App {
                         return;
                     }
                 };
-                render_data.config.width = new_size.width.max(1);
-                render_data.config.height = new_size.height.max(1);
+                let width = new_size.width.max(1);
+                let height = new_size.height.max(1);
+                render_data.config.width = width;
+                render_data.config.height = height;
+
+                let mut instances = Vec::new();
+                recursive_compute_layout(
+                    &self.data,
+                    0.0,
+                    0.0,
+                    1.0,
+                    height as f32 / width as f32,
+                    width as f32 / height as f32,
+                    &mut instances,
+                );
+
+                assert_eq!(
+                    (size_of::<Instance>() * instances.len()) as u64,
+                    render_data.instance_buffer.size(),
+                );
+
+                render_data.queue.write_buffer(
+                    &render_data.instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&instances),
+                );
 
                 render_data
                     .surface
