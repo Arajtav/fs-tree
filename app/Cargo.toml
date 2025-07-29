@@ -11,3 +11,4 @@ pollster = "0.4.0"
 wgpu = "26.0.1"
 winit = "0.30.11"
 fs_tree_shared = { path = "../shared", features = ["full_metadata"]}
+nix = { version = "0.30.1", features = ["user"] }

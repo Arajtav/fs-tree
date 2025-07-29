@@ -7,7 +7,9 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-full_metadata = []
+metadata_timestamps = []
+metadata_ownership = []
+full_metadata = ["metadata_timestamps", "metadata_ownership"]
 
 [dependencies]
 rayon = "1.10.0"

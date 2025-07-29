@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-#[cfg(feature = "full_metadata")]
+#[cfg(any(feature = "metadata_timestamps", feature = "metadata_ownership"))]
 use std::os::linux::fs::MetadataExt;
 
 pub enum ScanTree {
@@ -17,12 +17,16 @@ pub enum ScanTree {
     File {
         name: OsString,
         size: u64,
-        #[cfg(feature = "full_metadata")]
+        #[cfg(feature = "metadata_timestamps")]
         access: i64,
-        #[cfg(feature = "full_metadata")]
+        #[cfg(feature = "metadata_timestamps")]
         creation: i64,
-        #[cfg(feature = "full_metadata")]
+        #[cfg(feature = "metadata_timestamps")]
         modification: i64,
+        #[cfg(feature = "metadata_ownership")]
+        uid: u32,
+        #[cfg(feature = "metadata_ownership")]
+        gid: u32,
     },
 }
 
@@ -40,18 +44,19 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
         Ok(dir) => dir,
         Err(err) => {
             eprint!("Error reading directory {entry:?}: {err}");
-            #[cfg(feature = "full_metadata")]
             return ScanTree::File {
                 size: 0,
                 name: "".into(),
+                #[cfg(feature = "metadata_timestamps")]
                 access: 0,
+                #[cfg(feature = "metadata_timestamps")]
                 creation: 0,
+                #[cfg(feature = "metadata_timestamps")]
                 modification: 0,
-            };
-            #[cfg(not(feature = "full_metadata"))]
-            return ScanTree::File {
-                size: 0,
-                name: "".into(),
+                #[cfg(feature = "metadata_ownership")]
+                uid: 0,
+                #[cfg(feature = "metadata_ownership")]
+                gid: 0,
             };
         }
     };
@@ -81,21 +86,20 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
 
             if metadata.is_file() {
                 let len = metadata.len();
-                return Some(
-                    #[cfg(feature = "full_metadata")]
-                    ScanTree::File {
-                        size: len,
-                        name: entry.file_name(),
-                        access: metadata.st_atime(),
-                        creation: metadata.st_ctime(), // change but whatever
-                        modification: metadata.st_mtime(),
-                    },
-                    #[cfg(not(feature = "full_metadata"))]
-                    ScanTree::File {
-                        size: len,
-                        name: entry.file_name(),
-                    },
-                );
+                return Some(ScanTree::File {
+                    size: len,
+                    name: entry.file_name(),
+                    #[cfg(feature = "metadata_timestamps")]
+                    access: metadata.st_atime(),
+                    #[cfg(feature = "metadata_timestamps")]
+                    creation: metadata.st_ctime(), // change but whatever
+                    #[cfg(feature = "metadata_timestamps")]
+                    modification: metadata.st_mtime(),
+                    #[cfg(feature = "metadata_ownership")]
+                    uid: metadata.st_uid(),
+                    #[cfg(feature = "metadata_ownership")]
+                    gid: metadata.st_gid(),
+                });
             }
 
             Some(scan_dir(&entry.path()))

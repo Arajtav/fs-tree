@@ -1,3 +1,4 @@
+mod colors;
 mod extensions;
 mod render_tree;
 
@@ -447,6 +448,8 @@ fn main() {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64,
+        nix::unistd::getuid().into(),
+        nix::unistd::getgid().into(),
     );
 
     let mut app = App::new(render_tree);

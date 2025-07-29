@@ -2,7 +2,10 @@ use clap::ValueEnum;
 use fs_tree_shared::ScanTree;
 use std::path::Path;
 
-use crate::extensions::get_color_from_extension;
+use crate::{
+    colors::{get_color_from_age, get_color_from_id},
+    extensions::get_color_from_extension,
+};
 
 #[derive(Debug, Clone, ValueEnum)]
 #[clap(rename_all = "lower")]
@@ -11,6 +14,8 @@ pub enum ColorMode {
     Modification,
     Creation,
     Extension,
+    User,
+    Group,
 }
 
 pub enum RenderTree {
@@ -24,22 +29,6 @@ pub enum RenderTree {
     },
 }
 
-fn grayscale_from_age(now: i64, then: i64) -> [f32; 3] {
-    if then > now {
-        // some green
-        return [0.243, 0.925, 0.663];
-    }
-
-    const MAX_AGE: f32 = 5.0 * 365.0 * 24.0 * 60.0 * 60.0;
-
-    let normalized_age = ((now - then) as f32 / MAX_AGE).min(1.0);
-
-    let fade = 1.0 - (normalized_age * 9.0 + 1.0).log10();
-    let gray = fade.clamp(0.0, 1.0);
-
-    [gray, gray, gray]
-}
-
 impl RenderTree {
     pub fn get_size(&self) -> u64 {
         *match self {
@@ -48,7 +37,13 @@ impl RenderTree {
         }
     }
 
-    pub fn from_scan_tree(tree: ScanTree, color_mode: &ColorMode, now: i64) -> Self {
+    pub fn from_scan_tree(
+        tree: ScanTree,
+        color_mode: &ColorMode,
+        now: i64,
+        cuid: u32,
+        cgid: u32,
+    ) -> Self {
         match tree {
             ScanTree::File {
                 size,
@@ -56,14 +51,18 @@ impl RenderTree {
                 access,
                 creation,
                 modification,
+                uid,
+                gid,
             } => {
                 let color = match color_mode {
-                    ColorMode::Access => grayscale_from_age(now, access),
-                    ColorMode::Creation => grayscale_from_age(now, creation),
-                    ColorMode::Modification => grayscale_from_age(now, modification),
+                    ColorMode::Access => get_color_from_age(now, access),
+                    ColorMode::Creation => get_color_from_age(now, creation),
+                    ColorMode::Modification => get_color_from_age(now, modification),
                     ColorMode::Extension => {
                         get_color_from_extension(Path::new(&name).extension().unwrap_or_default())
                     }
+                    ColorMode::User => get_color_from_id(uid, cuid),
+                    ColorMode::Group => get_color_from_id(gid, cgid),
                 };
 
                 RenderTree::File { size, color }
@@ -71,7 +70,7 @@ impl RenderTree {
             ScanTree::Dir { size, children, .. } => {
                 let children: Vec<RenderTree> = children
                     .into_iter()
-                    .map(|e| RenderTree::from_scan_tree(e, color_mode, now))
+                    .map(|e| RenderTree::from_scan_tree(e, color_mode, now, cuid, cgid))
                     .collect();
 
                 RenderTree::Dir { size, children }
