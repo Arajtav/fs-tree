@@ -86,6 +86,12 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
 
             if metadata.is_file() {
                 let len = metadata.len();
+
+                #[cfg(feature = "ignore_zero")]
+                if len == 0 {
+                    return None;
+                }
+
                 return Some(ScanTree::File {
                     size: len,
                     name: entry.file_name(),
@@ -102,7 +108,14 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                 });
             }
 
-            Some(scan_dir(&entry.path()))
+            let child = scan_dir(&entry.path());
+
+            #[cfg(feature = "ignore_zero")]
+            if child.get_size() == 0 {
+                return None;
+            }
+
+            Some(child)
         })
         .collect();
     results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));

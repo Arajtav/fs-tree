@@ -114,10 +114,7 @@ fn recursive_compute_layout(
                     let current_child = &children[base_index + offset_index];
                     let current_child_size = current_child.get_size();
 
-                    if current_child_size == 0 {
-                        offset_index += 1;
-                        continue;
-                    }
+                    debug_assert_ne!(current_child_size, 0);
 
                     let mut sizes: Vec<u64> = current_row.iter().map(|e| e.get_size()).collect();
 
