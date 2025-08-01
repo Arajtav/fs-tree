@@ -10,6 +10,10 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
 };
 
+fn hash2d(n: vec2<f32>) -> f32 {
+    return fract(sin(dot(n, vec2<f32>(12.9898, 78.233))) * 43758.5453123);
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -22,7 +26,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         0.0,
         1.0
     );
-    output.color = input.instance_color;
+
+    let random = (hash2d(input.instance_pos) * 2.0) - 1.0;
+    output.color = input.instance_color + vec4<f32>(vec3<f32>(random * 0.01), 0.0);
+
     return output;
 }
 
