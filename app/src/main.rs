@@ -3,6 +3,7 @@ mod extensions;
 mod render_tree;
 
 use std::{
+    ffi::OsString,
     path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -14,7 +15,7 @@ use render_tree::{ColorMode, RenderTree};
 use wgpu::{util::DeviceExt, DeviceDescriptor, PowerPreference, SurfaceConfiguration};
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
@@ -72,7 +73,7 @@ fn highest_aspect_ratio(row: &[u64], row_area: f32, size: (f32, f32)) -> f32 {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Rectangle {
     x: f32,
     y: f32,
@@ -109,7 +110,7 @@ fn recursive_compute_layout(
     mut base_size: (f32, f32),
     aspect_ratio: f32,
     out: &mut Vec<Instance>,
-    mut level_out: Option<&mut Vec<Rectangle>>,
+    mut level_out: Option<&mut Vec<(Rectangle, OsString)>>,
 ) {
     match tree {
         RenderTree::File { color, .. } => {
@@ -198,14 +199,15 @@ fn recursive_compute_layout(
                     };
 
                     if let Some(ref mut level_out) = level_out {
-                        if matches!(tree, RenderTree::Dir { .. }) {
-                            level_out.push(Rectangle {
+                        level_out.push((
+                            Rectangle {
                                 x: child_x,
                                 y: child_y * aspect_ratio,
                                 dx: child_dx,
                                 dy: child_dy * aspect_ratio,
-                            });
-                        }
+                            },
+                            child.get_name().to_owned(),
+                        ))
                     }
 
                     recursive_compute_layout(
@@ -249,17 +251,48 @@ struct RenderData {
 
 struct App {
     render_data: Option<RenderData>,
-    data: RenderTree,
-    level: Vec<Rectangle>,
+    current_data: &'static RenderTree,
+    level: Vec<(Rectangle, OsString)>,
 }
 
 impl App {
-    fn new(render_tree: RenderTree) -> Self {
+    fn new(render_tree: &'static RenderTree) -> Self {
         Self {
             render_data: None,
-            data: render_tree,
+            current_data: render_tree,
             level: Vec::new(),
         }
+    }
+
+    fn regenerate_layout_and_request_redraw(&mut self) {
+        let render_data = self.render_data.as_mut().unwrap();
+        let size = render_data.window.inner_size();
+        let width = size.width.max(1) as f32;
+        let height = size.height.max(1) as f32;
+
+        let mut instances = Vec::new();
+        let mut level = Vec::new();
+
+        recursive_compute_layout(
+            self.current_data,
+            (0.0, 0.0),
+            (1.0, height / width),
+            width / height,
+            &mut instances,
+            Some(&mut level),
+        );
+
+        self.level = level;
+
+        render_data.instance_count = instances.len() as u32;
+
+        render_data.queue.write_buffer(
+            &render_data.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instances),
+        );
+
+        render_data.window.request_redraw();
     }
 }
 
@@ -321,7 +354,7 @@ impl ApplicationHandler for App {
         let mut instances = Vec::new();
         let mut level = Vec::new();
         recursive_compute_layout(
-            &self.data,
+            self.current_data,
             (0.0, 0.0),
             (1.0, size.height as f32 / size.width as f32),
             size.width as f32 / size.height as f32,
@@ -473,38 +506,15 @@ impl ApplicationHandler for App {
             // there is enough delay for at least one frame to render before the layout changes
             // apparently it is a wayland problem, but it would be really nice if there was a way to fix it
             WindowEvent::Resized(new_size) => {
-                let width = new_size.width.max(1);
-                let height = new_size.height.max(1);
-                render_data.config.width = width;
-                render_data.config.height = height;
-
-                let mut instances = Vec::new();
-                let mut level = Vec::new();
-                recursive_compute_layout(
-                    &self.data,
-                    (0.0, 0.0),
-                    (1.0, height as f32 / width as f32),
-                    width as f32 / height as f32,
-                    &mut instances,
-                    Some(&mut level),
-                );
-
-                self.level = level;
-
-                assert_eq!(
-                    (size_of::<Instance>() * instances.len()) as u64,
-                    render_data.instance_buffer.size(),
-                );
-
-                render_data.queue.write_buffer(
-                    &render_data.instance_buffer,
-                    0,
-                    bytemuck::cast_slice(&instances),
-                );
+                render_data.config.width = new_size.width.max(1);
+                render_data.config.height = new_size.height.max(1);
 
                 render_data
                     .surface
                     .configure(&render_data.device, &render_data.config);
+
+                let _ = render_data;
+                self.regenerate_layout_and_request_redraw();
             }
             WindowEvent::RedrawRequested => {
                 let output = match render_data.surface.get_current_texture() {
@@ -549,12 +559,12 @@ impl ApplicationHandler for App {
                 render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..render_data.instance_count);
 
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some(dir) = self.level.iter().find(|e| e.overlaps(x, y)) {
+                    if let Some((rect, _)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
                         render_pass.set_pipeline(&render_data.pipeline2);
                         render_data.queue.write_buffer(
                             &render_data.vertex_buffer2,
                             0,
-                            bytemuck::cast_slice(&dir.to_vertices()),
+                            bytemuck::cast_slice(&rect.to_vertices()),
                         );
                         render_pass.set_vertex_buffer(0, render_data.vertex_buffer2.slice(..));
                         render_pass.set_index_buffer(
@@ -580,6 +590,28 @@ impl ApplicationHandler for App {
                 render_data.cursor = None;
                 render_data.window.request_redraw();
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if let Some((x, y)) = render_data.cursor {
+                    if let Some((_, name)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                        let children = match self.current_data {
+                            RenderTree::Dir { children, .. } => children,
+                            RenderTree::File { .. } => unreachable!(),
+                        };
+                        let child = children.iter().find(|e| e.get_name() == name).unwrap();
+                        if matches!(child, RenderTree::Dir { .. }) {
+                            self.current_data = child;
+
+                            let _ = render_data;
+                            self.regenerate_layout_and_request_redraw();
+                        }
+                    }
+                }
+            }
+
             _ => {}
         }
     }
@@ -611,6 +643,7 @@ fn main() {
         nix::unistd::getgid().into(),
     );
 
-    let mut app = App::new(render_tree);
+    let static_tree: &'static RenderTree = Box::leak(Box::new(render_tree));
+    let mut app = App::new(static_tree);
     let _ = event_loop.run_app(&mut app);
 }

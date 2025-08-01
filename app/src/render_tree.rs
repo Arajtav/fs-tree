@@ -1,6 +1,9 @@
 use clap::ValueEnum;
 use fs_tree_shared::ScanTree;
-use std::path::Path;
+use std::{
+    ffi::{OsStr, OsString},
+    path::Path,
+};
 
 use crate::{
     colors::{get_color_from_age, get_color_from_id},
@@ -21,10 +24,12 @@ pub enum ColorMode {
 pub enum RenderTree {
     Dir {
         size: u64,
+        name: OsString,
         children: Vec<RenderTree>,
     },
     File {
         size: u64,
+        name: OsString,
         color: [f32; 3],
     },
 }
@@ -34,6 +39,13 @@ impl RenderTree {
         *match self {
             RenderTree::Dir { size, .. } => size,
             RenderTree::File { size, .. } => size,
+        }
+    }
+
+    pub fn get_name(&self) -> &OsStr {
+        match self {
+            RenderTree::Dir { name, .. } => name,
+            RenderTree::File { name, .. } => name,
         }
     }
 
@@ -65,15 +77,23 @@ impl RenderTree {
                     ColorMode::Group => get_color_from_id(gid, cgid),
                 };
 
-                RenderTree::File { size, color }
+                RenderTree::File { size, name, color }
             }
-            ScanTree::Dir { size, children, .. } => {
+            ScanTree::Dir {
+                size,
+                name,
+                children,
+            } => {
                 let children: Vec<RenderTree> = children
                     .into_iter()
                     .map(|e| RenderTree::from_scan_tree(e, color_mode, now, cuid, cgid))
                     .collect();
 
-                RenderTree::Dir { size, children }
+                RenderTree::Dir {
+                    size,
+                    name,
+                    children,
+                }
             }
         }
     }
