@@ -50,7 +50,7 @@ struct Instance {
     color: [f32; 4],
 }
 
-fn highest_aspect_ratio(row: &[u64], row_area: f32, w: f32, h: f32) -> f32 {
+fn highest_aspect_ratio(row: &[u64], row_area: f32, size: (f32, f32)) -> f32 {
     if row.is_empty() || row_area == 0.0 {
         return f32::INFINITY;
     }
@@ -60,10 +60,10 @@ fn highest_aspect_ratio(row: &[u64], row_area: f32, w: f32, h: f32) -> f32 {
         .map(|&child| {
             let child = child as f32;
 
-            let (w, h) = if w >= h {
-                (row_area / h, child * h / total_size)
+            let (w, h) = if size.0 >= size.1 {
+                (row_area / size.1, child * size.1 / total_size)
             } else {
-                (child * w / total_size, row_area / w)
+                (child * size.0 / total_size, row_area / size.0)
             };
 
             (w / h).max(h / w)
@@ -71,20 +71,51 @@ fn highest_aspect_ratio(row: &[u64], row_area: f32, w: f32, h: f32) -> f32 {
         .fold(0.0, |acc, x| acc.max(x))
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Rectangle {
+    x: f32,
+    y: f32,
+    dx: f32,
+    dy: f32,
+}
+
+impl Rectangle {
+    fn overlaps(&self, x: f32, y: f32) -> bool {
+        x >= self.x && y >= self.y && x <= self.x + self.dx && y <= self.y + self.dy
+    }
+
+    fn to_vertices(self) -> [Vertex; 4] {
+        [
+            Vertex {
+                position: [self.x, self.y],
+            },
+            Vertex {
+                position: [self.x + self.dx, self.y],
+            },
+            Vertex {
+                position: [self.x, self.y + self.dy],
+            },
+            Vertex {
+                position: [self.x + self.dx, self.y + self.dy],
+            },
+        ]
+    }
+}
+
 fn recursive_compute_layout(
     tree: &RenderTree,
-    mut x: f32,
-    mut y: f32,
-    mut dx: f32,
-    mut dy: f32,
+    mut base_position: (f32, f32),
+    mut base_size: (f32, f32),
     aspect_ratio: f32,
     out: &mut Vec<Instance>,
+    mut level_out: Option<&mut Vec<Rectangle>>,
 ) {
     match tree {
         RenderTree::File { color, .. } => {
             out.push(Instance {
-                position: [x, y * aspect_ratio],
-                size: [dx, dy * aspect_ratio],
+                position: [base_position.0, base_position.1 * aspect_ratio],
+                size: [base_size.0, base_size.1 * aspect_ratio],
                 color: [color[0], color[1], color[2], 1.0],
             });
         }
@@ -92,7 +123,7 @@ fn recursive_compute_layout(
         RenderTree::Dir { size, children, .. } => {
             let size = *size as f32;
 
-            let total_area = dx * dy;
+            let total_area = base_size.0 * base_size.1;
 
             let mut base_index = 0;
 
@@ -121,8 +152,7 @@ fn recursive_compute_layout(
                     let current_aspect = highest_aspect_ratio(
                         &sizes,
                         total_area * (current_total as f32 / size),
-                        dx,
-                        dy,
+                        base_size,
                     );
 
                     sizes.push(current_child_size);
@@ -131,8 +161,7 @@ fn recursive_compute_layout(
                     let next_aspect = highest_aspect_ratio(
                         &sizes,
                         total_area * (next_total as f32 / size),
-                        dx,
-                        dy,
+                        base_size,
                     );
 
                     if next_aspect > current_aspect {
@@ -146,42 +175,55 @@ fn recursive_compute_layout(
 
                 let current_total = current_total as f32;
 
-                let row_length = total_area * current_total / (size * dx.min(dy));
+                let row_length = total_area * current_total / (size * base_size.0.min(base_size.1));
 
                 let mut offset = 0.0;
                 for child in current_row.iter() {
                     let child_size = child.get_size() as f32;
-                    if dx >= dy {
-                        recursive_compute_layout(
-                            child,
-                            x,
-                            y + offset,
+                    let (child_x, child_y, child_dx, child_dy) = if base_size.0 >= base_size.1 {
+                        let height = base_size.1 * child_size / current_total;
+                        let pos = (
+                            base_position.0,
+                            base_position.1 + offset,
                             row_length,
-                            dy * child_size / current_total,
-                            aspect_ratio,
-                            out,
+                            height,
                         );
-                        offset += dy * child_size / current_total;
+                        offset += height;
+                        pos
                     } else {
-                        recursive_compute_layout(
-                            child,
-                            x + offset,
-                            y,
-                            dx * child_size / current_total,
-                            row_length,
-                            aspect_ratio,
-                            out,
-                        );
-                        offset += dx * child_size / current_total;
+                        let width = base_size.0 * child_size / current_total;
+                        let pos = (base_position.0 + offset, base_position.1, width, row_length);
+                        offset += width;
+                        pos
+                    };
+
+                    if let Some(ref mut level_out) = level_out {
+                        if matches!(tree, RenderTree::Dir { .. }) {
+                            level_out.push(Rectangle {
+                                x: child_x,
+                                y: child_y * aspect_ratio,
+                                dx: child_dx,
+                                dy: child_dy * aspect_ratio,
+                            });
+                        }
                     }
+
+                    recursive_compute_layout(
+                        child,
+                        (child_x, child_y),
+                        (child_dx, child_dy),
+                        aspect_ratio,
+                        out,
+                        None,
+                    );
                 }
 
-                if dx >= dy {
-                    x += row_length;
-                    dx -= row_length;
+                if base_size.0 >= base_size.1 {
+                    base_position.0 += row_length;
+                    base_size.0 -= row_length;
                 } else {
-                    y += row_length;
-                    dy -= row_length;
+                    base_position.1 += row_length;
+                    base_size.1 -= row_length;
                 }
                 base_index += offset_index;
             }
@@ -200,11 +242,15 @@ struct RenderData {
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_count: u32,
+    cursor: Option<(f32, f32)>,
+    pipeline2: wgpu::RenderPipeline,
+    vertex_buffer2: wgpu::Buffer,
 }
 
 struct App {
     render_data: Option<RenderData>,
     data: RenderTree,
+    level: Vec<Rectangle>,
 }
 
 impl App {
@@ -212,6 +258,7 @@ impl App {
         Self {
             render_data: None,
             data: render_tree,
+            level: Vec::new(),
         }
     }
 }
@@ -272,16 +319,17 @@ impl ApplicationHandler for App {
 
         // I guess the size could be { 0, 0 }, shouldn't break anything though.
         let mut instances = Vec::new();
+        let mut level = Vec::new();
         recursive_compute_layout(
             &self.data,
-            0.0,
-            0.0,
-            1.0,
-            size.height as f32 / size.width as f32,
+            (0.0, 0.0),
+            (1.0, size.height as f32 / size.width as f32),
             size.width as f32 / size.height as f32,
             &mut instances,
+            Some(&mut level),
         );
         dbg!(instances.len());
+        dbg!(level.len());
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
@@ -333,6 +381,53 @@ impl ApplicationHandler for App {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let pipeline_layout2 = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Pipeline Layout 2"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        let vertex_buffer2 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer 2"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let shader2 = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader 2"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader2.wgsl").into()),
+        });
+
+        let pipeline2 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Pipeline 2"),
+            cache: Default::default(),
+            layout: Some(&pipeline_layout2),
+            vertex: wgpu::VertexState {
+                compilation_options: Default::default(),
+                module: &shader2,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                compilation_options: Default::default(),
+                module: &shader2,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -342,6 +437,8 @@ impl ApplicationHandler for App {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
+
+        self.level = level;
 
         self.render_data = Some(RenderData {
             vertex_buffer,
@@ -354,12 +451,21 @@ impl ApplicationHandler for App {
             queue,
             config,
             window,
+            cursor: None,
+            pipeline2,
+            vertex_buffer2,
         });
 
         self.render_data.as_ref().unwrap().window.request_redraw();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let render_data = match self.render_data.as_mut() {
+            Some(render_data) => render_data,
+            None => {
+                return;
+            }
+        };
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -367,27 +473,23 @@ impl ApplicationHandler for App {
             // there is enough delay for at least one frame to render before the layout changes
             // apparently it is a wayland problem, but it would be really nice if there was a way to fix it
             WindowEvent::Resized(new_size) => {
-                let render_data = match self.render_data.as_mut() {
-                    Some(render_data) => render_data,
-                    None => {
-                        return;
-                    }
-                };
                 let width = new_size.width.max(1);
                 let height = new_size.height.max(1);
                 render_data.config.width = width;
                 render_data.config.height = height;
 
                 let mut instances = Vec::new();
+                let mut level = Vec::new();
                 recursive_compute_layout(
                     &self.data,
-                    0.0,
-                    0.0,
-                    1.0,
-                    height as f32 / width as f32,
+                    (0.0, 0.0),
+                    (1.0, height as f32 / width as f32),
                     width as f32 / height as f32,
                     &mut instances,
+                    Some(&mut level),
                 );
+
+                self.level = level;
 
                 assert_eq!(
                     (size_of::<Instance>() * instances.len()) as u64,
@@ -405,13 +507,6 @@ impl ApplicationHandler for App {
                     .configure(&render_data.device, &render_data.config);
             }
             WindowEvent::RedrawRequested => {
-                let render_data = match self.render_data.as_ref() {
-                    Some(render_data) => render_data,
-                    None => {
-                        return;
-                    }
-                };
-
                 let output = match render_data.surface.get_current_texture() {
                     Ok(frame) => frame,
                     Err(_) => return,
@@ -452,10 +547,38 @@ impl ApplicationHandler for App {
                     wgpu::IndexFormat::Uint16,
                 );
                 render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..render_data.instance_count);
+
+                if let Some((x, y)) = render_data.cursor {
+                    if let Some(dir) = self.level.iter().find(|e| e.overlaps(x, y)) {
+                        render_pass.set_pipeline(&render_data.pipeline2);
+                        render_data.queue.write_buffer(
+                            &render_data.vertex_buffer2,
+                            0,
+                            bytemuck::cast_slice(&dir.to_vertices()),
+                        );
+                        render_pass.set_vertex_buffer(0, render_data.vertex_buffer2.slice(..));
+                        render_pass.set_index_buffer(
+                            render_data.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint16,
+                        );
+                        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+                    }
+                }
                 drop(render_pass);
 
                 render_data.queue.submit(Some(encoder.finish()));
                 output.present();
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let size = render_data.window.inner_size();
+                let x = position.x as f32 / size.width as f32;
+                let y = position.y as f32 / size.height as f32;
+                render_data.cursor = Some((x, 1.0 - y));
+                render_data.window.request_redraw();
+            }
+            WindowEvent::CursorLeft { .. } => {
+                render_data.cursor = None;
+                render_data.window.request_redraw();
             }
             _ => {}
         }
