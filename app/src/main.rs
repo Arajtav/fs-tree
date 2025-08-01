@@ -251,7 +251,8 @@ struct RenderData {
 
 struct App {
     render_data: Option<RenderData>,
-    current_data: &'static RenderTree,
+    data: Vec<&'static RenderTree>,
+    current: usize,
     level: Vec<(Rectangle, OsString)>,
 }
 
@@ -259,7 +260,8 @@ impl App {
     fn new(render_tree: &'static RenderTree) -> Self {
         Self {
             render_data: None,
-            current_data: render_tree,
+            data: vec![render_tree],
+            current: 0,
             level: Vec::new(),
         }
     }
@@ -274,7 +276,7 @@ impl App {
         let mut level = Vec::new();
 
         recursive_compute_layout(
-            self.current_data,
+            self.data[self.current],
             (0.0, 0.0),
             (1.0, height / width),
             width / height,
@@ -293,6 +295,30 @@ impl App {
         );
 
         render_data.window.request_redraw();
+    }
+
+    fn go_back(&mut self) {
+        if self.current > 0 {
+            self.current -= 1;
+            self.regenerate_layout_and_request_redraw();
+        }
+    }
+
+    fn go_forward(&mut self) {
+        if self.current + 1 < self.data.len() {
+            self.current += 1;
+            self.regenerate_layout_and_request_redraw();
+        }
+    }
+
+    fn go_next(&mut self, next: &'static RenderTree) {
+        if self.data.get(self.current + 1).map(|r| *r as *const _) != Some(next as *const _) {
+            self.data.truncate(self.current + 1);
+            self.data.push(next);
+        }
+        self.current += 1;
+
+        self.regenerate_layout_and_request_redraw();
     }
 }
 
@@ -354,7 +380,7 @@ impl ApplicationHandler for App {
         let mut instances = Vec::new();
         let mut level = Vec::new();
         recursive_compute_layout(
-            self.current_data,
+            self.data[self.current],
             (0.0, 0.0),
             (1.0, size.height as f32 / size.width as f32),
             size.width as f32 / size.height as f32,
@@ -513,7 +539,6 @@ impl ApplicationHandler for App {
                     .surface
                     .configure(&render_data.device, &render_data.config);
 
-                let _ = render_data;
                 self.regenerate_layout_and_request_redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -597,20 +622,27 @@ impl ApplicationHandler for App {
             } => {
                 if let Some((x, y)) = render_data.cursor {
                     if let Some((_, name)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
-                        let children = match self.current_data {
+                        let children = match self.data[self.current] {
                             RenderTree::Dir { children, .. } => children,
                             RenderTree::File { .. } => unreachable!(),
                         };
                         let child = children.iter().find(|e| e.get_name() == name).unwrap();
-                        if matches!(child, RenderTree::Dir { .. }) {
-                            self.current_data = child;
-
-                            let _ = render_data;
-                            self.regenerate_layout_and_request_redraw();
+                        if let RenderTree::Dir { .. } = child {
+                            self.go_next(child);
                         }
                     }
                 }
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Back,
+                ..
+            } => self.go_back(),
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Forward,
+                ..
+            } => self.go_forward(),
 
             _ => {}
         }
