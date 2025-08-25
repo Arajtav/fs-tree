@@ -12,3 +12,7 @@ wgpu = "26.0.1"
 winit = "0.30.11"
 fs_tree_shared = { path = "../shared", features = ["full_metadata", "ignore_zero"]}
 nix = { version = "0.30.1", features = ["user"] }
+fontdb = "0.23.0"
+glyph_brush = "0.7.12"
+ab_glyph = "0.2.31"
+wgpu_text = "26.0.0"

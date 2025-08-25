@@ -1,6 +1,7 @@
 mod colors;
 mod extensions;
 mod render_tree;
+mod utils;
 
 use std::{
     ffi::OsString,
@@ -9,16 +10,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ab_glyph::FontArc;
 use clap::Parser;
 use fs_tree_shared::scan_dir;
+use glyph_brush::{HorizontalAlign, Layout, Section, Text, VerticalAlign};
 use render_tree::{ColorMode, RenderTree};
 use wgpu::{util::DeviceExt, DeviceDescriptor, PowerPreference, SurfaceConfiguration};
+use wgpu_text::{BrushBuilder, TextBrush};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
+
+use crate::utils::{entry_description, load_font};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -86,6 +92,10 @@ impl Rectangle {
         x >= self.x && y >= self.y && x <= self.x + self.dx && y <= self.y + self.dy
     }
 
+    fn get_center(&self) -> (f32, f32) {
+        (self.x + self.dx * 0.5, self.y + self.dy * 0.5)
+    }
+
     fn to_vertices(self) -> [Vertex; 4] {
         [
             Vertex {
@@ -110,7 +120,7 @@ fn recursive_compute_layout(
     mut base_size: (f32, f32),
     aspect_ratio: f32,
     out: &mut Vec<Instance>,
-    mut level_out: Option<&mut Vec<(Rectangle, OsString)>>,
+    mut level_out: Option<&mut Vec<(Rectangle, OsString, u64, bool)>>,
 ) {
     match tree {
         RenderTree::File { color, .. } => {
@@ -207,6 +217,8 @@ fn recursive_compute_layout(
                                 dy: child_dy * aspect_ratio,
                             },
                             child.get_name().to_owned(),
+                            child.get_size(),
+                            matches!(child, RenderTree::File { .. }),
                         ))
                     }
 
@@ -247,22 +259,25 @@ struct RenderData {
     cursor: Option<(f32, f32)>,
     pipeline2: wgpu::RenderPipeline,
     vertex_buffer2: wgpu::Buffer,
+    brush: TextBrush,
 }
 
 struct App {
     render_data: Option<RenderData>,
     data: Vec<&'static RenderTree>,
     current: usize,
-    level: Vec<(Rectangle, OsString)>,
+    level: Vec<(Rectangle, OsString, u64, bool)>,
+    font: FontArc,
 }
 
 impl App {
-    fn new(render_tree: &'static RenderTree) -> Self {
+    fn new(render_tree: &'static RenderTree, font: FontArc) -> Self {
         Self {
             render_data: None,
             data: vec![render_tree],
             current: 0,
             level: Vec::new(),
+            font,
         }
     }
 
@@ -499,6 +514,13 @@ impl ApplicationHandler for App {
 
         self.level = level;
 
+        let brush = BrushBuilder::using_font(self.font.clone()).build(
+            &device,
+            config.width,
+            config.height,
+            config.format,
+        );
+
         self.render_data = Some(RenderData {
             vertex_buffer,
             index_buffer,
@@ -513,6 +535,7 @@ impl ApplicationHandler for App {
             cursor: None,
             pipeline2,
             vertex_buffer2,
+            brush,
         });
 
         self.render_data.as_ref().unwrap().window.request_redraw();
@@ -532,8 +555,14 @@ impl ApplicationHandler for App {
             // there is enough delay for at least one frame to render before the layout changes
             // apparently it is a wayland problem, but it would be really nice if there was a way to fix it
             WindowEvent::Resized(new_size) => {
-                render_data.config.width = new_size.width.max(1);
-                render_data.config.height = new_size.height.max(1);
+                let width = new_size.width.max(1);
+                let height = new_size.height.max(1);
+                render_data.config.width = width;
+                render_data.config.height = height;
+
+                render_data
+                    .brush
+                    .resize_view(width as f32, height as f32, &render_data.queue);
 
                 render_data
                     .surface
@@ -584,7 +613,9 @@ impl ApplicationHandler for App {
                 render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..render_data.instance_count);
 
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some((rect, _)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                    if let Some((rect, name, size, is_file)) =
+                        self.level.iter().find(|e| e.0.overlaps(x, y))
+                    {
                         render_pass.set_pipeline(&render_data.pipeline2);
                         render_data.queue.write_buffer(
                             &render_data.vertex_buffer2,
@@ -597,6 +628,33 @@ impl ApplicationHandler for App {
                             wgpu::IndexFormat::Uint16,
                         );
                         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+
+                        let text_str = entry_description(name, *is_file, *size);
+                        let scale_x = render_data.config.width as f32 / 1920.0;
+                        let scale_y = render_data.config.height as f32 / 1080.0;
+                        let text_scale = 32.0 * scale_x.min(scale_y);
+                        let text_scale = text_scale.clamp(12.0, 96.0);
+                        let text = Text::new(&text_str).with_scale(text_scale);
+                        let pos = rect.get_center();
+                        let pos = (
+                            pos.0 * render_data.config.width as f32,
+                            (1.0 - pos.1) * render_data.config.height as f32,
+                        );
+                        let section = Section::default()
+                            .add_text(text)
+                            .with_screen_position(pos)
+                            .with_layout(
+                                Layout::default()
+                                    .h_align(HorizontalAlign::Center)
+                                    .v_align(VerticalAlign::Center),
+                            );
+
+                        render_data
+                            .brush
+                            .queue(&render_data.device, &render_data.queue, [&section])
+                            .unwrap();
+
+                        render_data.brush.draw(&mut render_pass);
                     }
                 }
                 drop(render_pass);
@@ -621,7 +679,7 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some((_, name)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                    if let Some((_, name, ..)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
                         let children = match self.data[self.current] {
                             RenderTree::Dir { children, .. } => children,
                             RenderTree::File { .. } => unreachable!(),
@@ -664,6 +722,9 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let args = Args::parse();
+
+    let font = load_font("Noto Sans Mono").expect("Could not load the font.");
+
     let render_tree = RenderTree::from_scan_tree(
         scan_dir(&args.entrypoint),
         &args.color,
@@ -676,6 +737,6 @@ fn main() {
     );
 
     let static_tree: &'static RenderTree = Box::leak(Box::new(render_tree));
-    let mut app = App::new(static_tree);
+    let mut app = App::new(static_tree, font);
     let _ = event_loop.run_app(&mut app);
 }
