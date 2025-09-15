@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+use std::ffi::OsStr;
 
 // https://en.wikipedia.org/wiki/List_of_file_formats
 static MAP: phf::Map<&'static [u8], [f32; 3]> = phf::phf_map! {
@@ -134,8 +134,12 @@ static MAP: phf::Map<&'static [u8], [f32; 3]> = phf::phf_map! {
 };
 
 pub fn get_color_from_extension(extension: &OsStr) -> [f32; 3] {
-    match MAP.get(&extension.as_bytes().to_ascii_lowercase()) {
-        Some(v) => *v,
-        None => [0.5, 0.5, 0.5],
-    }
+    let ext_str = match extension.to_str() {
+        Some(s) => s.to_ascii_lowercase(),
+        None => return [0.5, 0.5, 0.5],
+    };
+
+    MAP.get(ext_str.as_bytes())
+        .copied()
+        .unwrap_or([0.5, 0.5, 0.5])
 }

@@ -749,7 +749,9 @@ fn main() {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64,
+        #[cfg(target_family = "unix")]
         nix::unistd::getuid().into(),
+        #[cfg(target_family = "unix")]
         nix::unistd::getgid().into(),
     );
 

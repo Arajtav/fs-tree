@@ -5,8 +5,13 @@ use std::{
     path::Path,
 };
 
+#[cfg(feature = "metadata_ownership")]
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::MetadataExt;
+
 #[cfg(any(feature = "metadata_timestamps", feature = "metadata_ownership"))]
-use std::os::linux::fs::MetadataExt;
+#[cfg(target_family = "windows")]
+use std::os::windows::fs::MetadataExt;
 
 pub enum ScanTree {
     Dir {
@@ -43,7 +48,7 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
-            eprint!("Error reading directory {entry:?}: {err}");
+            eprintln!("Error reading directory {entry:?}: {err}");
             return ScanTree::File {
                 size: 0,
                 name: "".into(),
@@ -92,19 +97,48 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                     return None;
                 }
 
+                #[cfg(feature = "metadata_timestamps")]
+                #[cfg(target_family = "unix")]
+                let (access, creation, modification) =
+                    (metadata.atime(), metadata.ctime(), metadata.mtime());
+
+                #[cfg(feature = "metadata_timestamps")]
+                #[cfg(target_family = "windows")]
+                let (access, creation, modification) = {
+                    fn to_unix_time(filetime: u64) -> i64 {
+                        const EPOCH_DIFFERENCE: i64 = 11644473600;
+                        (filetime as i64 / 10000000).saturating_sub(EPOCH_DIFFERENCE)
+                    }
+                    (
+                        to_unix_time(metadata.last_access_time()),
+                        to_unix_time(metadata.creation_time()),
+                        to_unix_time(metadata.last_write_time()),
+                    )
+                };
+
+                #[cfg(all(feature = "metadata_ownership", not(target_family = "unix")))]
+                compile_error!(
+                    "The `metadata_ownership` feature is only available on Unix like systems"
+                );
+                #[cfg(all(feature = "metadata_ownership", not(target_family = "unix")))]
+                let (uid, gid) = (0, 0);
+
+                #[cfg(all(feature = "metadata_ownership", target_family = "unix"))]
+                let (uid, gid) = (metadata.uid(), metadata.gid());
+
                 return Some(ScanTree::File {
                     size: len,
                     name: entry.file_name(),
                     #[cfg(feature = "metadata_timestamps")]
-                    access: metadata.st_atime(),
+                    access,
                     #[cfg(feature = "metadata_timestamps")]
-                    creation: metadata.st_ctime(), // change but whatever
+                    creation,
                     #[cfg(feature = "metadata_timestamps")]
-                    modification: metadata.st_mtime(),
+                    modification,
                     #[cfg(feature = "metadata_ownership")]
-                    uid: metadata.st_uid(),
+                    uid,
                     #[cfg(feature = "metadata_ownership")]
-                    gid: metadata.st_gid(),
+                    gid,
                 });
             }
 

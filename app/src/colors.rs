@@ -1,3 +1,4 @@
+#[cfg(target_family = "unix")]
 fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> [f32; 3] {
     let chroma = value * saturation;
     let x = chroma * (1.0 - ((hue * 6.0) % 2.0 - 1.0).abs());
@@ -13,6 +14,7 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> [f32; 3] {
     [r + min, g + min, b + min]
 }
 
+#[cfg(target_family = "unix")]
 #[inline(always)]
 fn hash(n: u32) -> u32 {
     n.wrapping_mul(0x45d9f3b).rotate_left(13)
@@ -33,6 +35,7 @@ pub fn get_color_from_age(now: i64, then: i64) -> [f32; 3] {
     [gray, gray, gray]
 }
 
+#[cfg(target_family = "unix")]
 pub fn get_color_from_id(id: u32, current: u32) -> [f32; 3] {
     if id == 0 {
         return [0.0, 0.0, 0.0];
