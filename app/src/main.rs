@@ -265,16 +265,20 @@ struct RenderData {
 struct App {
     render_data: Option<RenderData>,
     data: Vec<&'static RenderTree>,
+    path: PathBuf,
+    base: PathBuf,
     current: usize,
     level: Vec<(Rectangle, OsString, u64, bool)>,
     font: FontArc,
 }
 
 impl App {
-    fn new(render_tree: &'static RenderTree, font: FontArc) -> Self {
+    fn new(render_tree: &'static RenderTree, font: FontArc, base: PathBuf) -> Self {
         Self {
             render_data: None,
             data: vec![render_tree],
+            path: PathBuf::new(),
+            base,
             current: 0,
             level: Vec::new(),
             font,
@@ -326,10 +330,19 @@ impl App {
         }
     }
 
-    fn go_next(&mut self, next: &'static RenderTree) {
+    fn go_next(&mut self, next: &'static RenderTree, name: OsString) {
         if self.data.get(self.current + 1).map(|r| *r as *const _) != Some(next as *const _) {
             self.data.truncate(self.current + 1);
             self.data.push(next);
+
+            let mut new_path = self
+                .path
+                .components()
+                .take(self.current)
+                .collect::<PathBuf>();
+
+            new_path.push(name);
+            self.path = new_path;
         }
         self.current += 1;
 
@@ -703,7 +716,29 @@ impl ApplicationHandler for App {
                         };
                         let child = children.iter().find(|e| e.get_name() == name).unwrap();
                         if let RenderTree::Dir { .. } = child {
-                            self.go_next(child);
+                            self.go_next(child, name.clone());
+                        }
+                    }
+                }
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                if let Some((x, y)) = render_data.cursor {
+                    if let Some((_, name, ..)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                        let path = self
+                            .base
+                            .join(
+                                self.path
+                                    .components()
+                                    .take(self.current)
+                                    .collect::<PathBuf>(),
+                            )
+                            .join(name);
+                        if open::that_detached(&path).is_err() {
+                            eprintln!("failed to open {path:?}")
                         }
                     }
                 }
@@ -756,6 +791,6 @@ fn main() {
     );
 
     let static_tree: &'static RenderTree = Box::leak(Box::new(render_tree));
-    let mut app = App::new(static_tree, font);
+    let mut app = App::new(static_tree, font, args.entrypoint);
     let _ = event_loop.run_app(&mut app);
 }
