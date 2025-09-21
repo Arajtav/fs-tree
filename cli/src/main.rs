@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 struct Args {
     /// Location from where to start the scan.
+    #[arg(default_value = ".")]
     entrypoint: PathBuf,
 
     /// Whether the generated json should be formatted.
