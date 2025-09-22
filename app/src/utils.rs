@@ -29,12 +29,23 @@ pub fn entry_description(name: &OsStr, is_file: bool, size: u64) -> String {
     }
 }
 
-pub fn load_font(name: &str) -> Option<FontArc> {
+pub fn get_font() -> Option<FontArc> {
     let mut db = Database::new();
     db.load_system_fonts();
 
     let query = fontdb::Query {
-        families: &[fontdb::Family::Name(name)],
+        families: &[
+            fontdb::Family::Name("Noto Sans Mono"),
+            fontdb::Family::Name("SF Mono"),
+            fontdb::Family::Name("Menlo"),
+            fontdb::Family::Name("Monaco"),
+            fontdb::Family::Name("Consolas"),
+            fontdb::Family::Name("Lucida Console"),
+            fontdb::Family::Name("Liberation Mono"),
+            fontdb::Family::Name("Ubuntu Mono"),
+            fontdb::Family::Monospace,
+            fontdb::Family::SansSerif,
+        ],
         ..Default::default()
     };
 

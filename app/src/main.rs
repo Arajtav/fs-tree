@@ -24,7 +24,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::utils::{entry_description, load_font};
+use crate::utils::{entry_description, get_font};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -775,7 +775,7 @@ fn main() {
 
     let args = Args::parse();
 
-    let font = load_font("Noto Sans Mono").expect("Could not load the font.");
+    let font = get_font().expect("Could not find any font.");
 
     let render_tree = RenderTree::from_scan_tree(
         scan_dir(&args.entrypoint),
