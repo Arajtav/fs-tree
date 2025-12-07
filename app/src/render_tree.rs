@@ -39,15 +39,13 @@ pub enum RenderTree {
 impl RenderTree {
     pub fn get_size(&self) -> u64 {
         *match self {
-            RenderTree::Dir { size, .. } => size,
-            RenderTree::File { size, .. } => size,
+            RenderTree::Dir { size, .. } | RenderTree::File { size, .. } => size,
         }
     }
 
     pub fn get_name(&self) -> &OsStr {
         match self {
-            RenderTree::Dir { name, .. } => name,
-            RenderTree::File { name, .. } => name,
+            RenderTree::Dir { name, .. } | RenderTree::File { name, .. } => name,
         }
     }
 

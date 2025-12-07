@@ -15,17 +15,18 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> [f32; 3] {
 }
 
 #[cfg(target_family = "unix")]
+#[allow(clippy::inline_always)]
 #[inline(always)]
 fn hash(n: u32) -> u32 {
-    n.wrapping_mul(0x45d9f3b).rotate_left(13)
+    n.wrapping_mul(0x045d_9f3b).rotate_left(13)
 }
 
 pub fn get_color_from_age(now: i64, then: i64) -> [f32; 3] {
+    const MAX_AGE: f32 = 5.0 * 365.0 * 24.0 * 60.0 * 60.0;
+
     if then > now {
         return [0.243, 0.925, 0.663];
     }
-
-    const MAX_AGE: f32 = 5.0 * 365.0 * 24.0 * 60.0 * 60.0;
 
     let normalized_age = ((now - then) as f32 / MAX_AGE).min(1.0);
 

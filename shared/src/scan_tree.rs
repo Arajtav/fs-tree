@@ -43,28 +43,45 @@ impl ScanTree {
             ScanTree::Dir { size, .. } | ScanTree::File { size, .. } => size,
         }
     }
+
+    fn get_empty(name: OsString) -> Self {
+        ScanTree::File {
+            size: 0,
+            name,
+            #[cfg(feature = "metadata_timestamps")]
+            access: 0,
+            #[cfg(feature = "metadata_timestamps")]
+            creation: 0,
+            #[cfg(feature = "metadata_timestamps")]
+            modification: 0,
+            #[cfg(feature = "metadata_ownership")]
+            uid: 0,
+            #[cfg(feature = "metadata_ownership")]
+            gid: 0,
+        }
+    }
 }
 
-#[allow(clippy::unnecessary_debug_formatting)]
+#[cfg(feature = "metadata_timestamps")]
+#[cfg(target_family = "windows")]
+fn to_unix_time(time: u64) -> i64 {
+    const EPOCH_DIFFERENCE: i64 = 11644473600;
+    (time as i64 / 10000000).saturating_sub(EPOCH_DIFFERENCE)
+}
+
 pub fn scan_dir(entry: &Path) -> ScanTree {
+    let name = if let Some(e) = entry.components().next_back() {
+        e.as_os_str().to_owned()
+    } else {
+        eprintln!("invalid (empty) path encountered");
+        return ScanTree::get_empty(OsString::from(""));
+    };
+
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("Error reading directory {entry:?}: {err}");
-            return ScanTree::File {
-                size: 0,
-                name: "".into(),
-                #[cfg(feature = "metadata_timestamps")]
-                access: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                creation: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                modification: 0,
-                #[cfg(feature = "metadata_ownership")]
-                uid: 0,
-                #[cfg(feature = "metadata_ownership")]
-                gid: 0,
-            };
+            eprintln!("Error reading directory {}: {err}", entry.display());
+            return ScanTree::get_empty(name);
         }
     };
 
@@ -107,10 +124,6 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                 #[cfg(feature = "metadata_timestamps")]
                 #[cfg(target_family = "windows")]
                 let (access, creation, modification) = {
-                    fn to_unix_time(filetime: u64) -> i64 {
-                        const EPOCH_DIFFERENCE: i64 = 11644473600;
-                        (filetime as i64 / 10000000).saturating_sub(EPOCH_DIFFERENCE)
-                    }
                     (
                         to_unix_time(metadata.last_access_time()),
                         to_unix_time(metadata.creation_time()),
@@ -155,8 +168,9 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
         })
         .collect();
     results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
+
     ScanTree::Dir {
-        name: entry.components().next_back().unwrap().as_os_str().into(),
+        name,
         size: results.iter().map(ScanTree::get_size).sum(),
         #[cfg(feature = "count_files")]
         files: results
@@ -165,7 +179,7 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                 ScanTree::Dir { files, .. } => *files,
                 ScanTree::File { .. } => 1usize,
             })
-            .sum::<usize>(),
+            .sum(),
         children: results,
     }
 }

@@ -16,7 +16,10 @@ use clap::Parser;
 use fs_tree_shared::scan_dir;
 use glyph_brush::{HorizontalAlign, Layout, Section, Text, VerticalAlign};
 use render_tree::{ColorMode, RenderTree};
-use wgpu::{util::DeviceExt, DeviceDescriptor, PowerPreference, SurfaceConfiguration};
+use wgpu::{
+    util::DeviceExt, DeviceDescriptor, PipelineCompilationOptions, PowerPreference,
+    SurfaceConfiguration,
+};
 use wgpu_text::{BrushBuilder, TextBrush};
 use winit::{
     application::ApplicationHandler,
@@ -455,10 +458,10 @@ impl ApplicationHandler for App {
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            cache: Default::default(),
+            cache: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                compilation_options: Default::default(),
+                compilation_options: PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[
@@ -481,7 +484,7 @@ impl ApplicationHandler for App {
                 ],
             },
             fragment: Some(wgpu::FragmentState {
-                compilation_options: Default::default(),
+                compilation_options: PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -515,10 +518,10 @@ impl ApplicationHandler for App {
 
         let pipeline2 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Pipeline 2"),
-            cache: Default::default(),
+            cache: None,
             layout: Some(&pipeline_layout2),
             vertex: wgpu::VertexState {
-                compilation_options: Default::default(),
+                compilation_options: PipelineCompilationOptions::default(),
                 module: &shader2,
                 entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
@@ -528,7 +531,7 @@ impl ApplicationHandler for App {
                 }],
             },
             fragment: Some(wgpu::FragmentState {
-                compilation_options: Default::default(),
+                compilation_options: PipelineCompilationOptions::default(),
                 module: &shader2,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -573,12 +576,10 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let render_data = match self.render_data.as_mut() {
-            Some(render_data) => render_data,
-            None => {
-                return;
-            }
+        let Some(render_data) = self.render_data.as_mut() else {
+            return;
         };
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -765,7 +766,7 @@ impl ApplicationHandler for App {
                             )
                             .join(name);
                         if open::that_detached(&path).is_err() {
-                            eprintln!("failed to open {path:?}");
+                            eprintln!("failed to open {}", path.display());
                         }
                     }
                 }
