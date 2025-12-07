@@ -40,12 +40,12 @@ pub enum ScanTree {
 impl ScanTree {
     fn get_size(&self) -> u64 {
         match *self {
-            ScanTree::Dir { size, .. } => size,
-            ScanTree::File { size, .. } => size,
+            ScanTree::Dir { size, .. } | ScanTree::File { size, .. } => size,
         }
     }
 }
 
+#[allow(clippy::unnecessary_debug_formatting)]
 pub fn scan_dir(entry: &Path) -> ScanTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
@@ -157,7 +157,7 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
     results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
     ScanTree::Dir {
         name: entry.components().next_back().unwrap().as_os_str().into(),
-        size: results.iter().map(|e| e.get_size()).sum(),
+        size: results.iter().map(ScanTree::get_size).sum(),
         #[cfg(feature = "count_files")]
         files: results
             .iter()

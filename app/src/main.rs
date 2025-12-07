@@ -6,6 +6,7 @@ mod utils;
 use std::{
     ffi::OsString,
     path::PathBuf,
+    ptr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -75,7 +76,7 @@ fn highest_aspect_ratio(row: &[u64], row_area: f32, size: (f32, f32)) -> f32 {
 
             (w / h).max(h / w)
         })
-        .fold(0.0, |acc, x| acc.max(x))
+        .fold(0.0, f32::max)
 }
 
 #[repr(C)]
@@ -197,7 +198,7 @@ fn recursive_compute_layout(
                 let row_length = total_area * current_total / (size * base_size.0.min(base_size.1));
 
                 let mut offset = 0.0;
-                for child in current_row.iter() {
+                for child in &current_row {
                     let child_size = child.get_size() as f32;
                     let (child_x, child_y, child_dx, child_dy) = if base_size.0 >= base_size.1 {
                         let height = base_size.1 * child_size / current_total;
@@ -344,7 +345,11 @@ impl App {
     }
 
     fn go_next(&mut self, next: &'static RenderTree, name: OsString) {
-        if self.data.get(self.current + 1).map(|r| *r as *const _) != Some(next as *const _) {
+        if self
+            .data
+            .get(self.current + 1)
+            .is_none_or(|r| !ptr::addr_eq(r, next))
+        {
             self.data.truncate(self.current + 1);
             self.data.push(next);
 
@@ -760,7 +765,7 @@ impl ApplicationHandler for App {
                             )
                             .join(name);
                         if open::that_detached(&path).is_err() {
-                            eprintln!("failed to open {path:?}")
+                            eprintln!("failed to open {path:?}");
                         }
                     }
                 }
