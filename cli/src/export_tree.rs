@@ -26,6 +26,7 @@ impl From<ScanTree> for ExportTree {
                 size,
                 name,
                 children,
+                ..
             } => ExportTree::Dir {
                 size,
                 children: children.into_iter().map(ExportTree::from).collect(),

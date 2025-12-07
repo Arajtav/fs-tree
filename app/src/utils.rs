@@ -19,13 +19,13 @@ fn format_size(size: u64) -> String {
     format!("{value:.2} {}B", UNITS[unit_index])
 }
 
-pub fn entry_description(name: &OsStr, is_file: bool, size: u64) -> String {
+pub fn entry_description(name: &OsStr, is_file: bool, size: u64, count: usize) -> String {
     let name = name.to_string_lossy();
     let size = format_size(size);
     if is_file {
         format!("{name} {size}")
     } else {
-        format!("{name} (DIR) {size}")
+        format!("{name} ({count} files) {size}")
     }
 }
 

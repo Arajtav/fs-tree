@@ -26,6 +26,7 @@ pub enum RenderTree {
     Dir {
         size: u64,
         name: OsString,
+        files: usize,
         children: Vec<RenderTree>,
     },
     File {
@@ -88,6 +89,7 @@ impl RenderTree {
                 size,
                 name,
                 children,
+                files,
             } => {
                 #[cfg(target_family = "unix")]
                 let children = children
@@ -103,6 +105,7 @@ impl RenderTree {
                 RenderTree::Dir {
                     size,
                     name,
+                    files,
                     children,
                 }
             }

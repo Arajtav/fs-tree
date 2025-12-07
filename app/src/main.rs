@@ -114,13 +114,21 @@ impl Rectangle {
     }
 }
 
+struct Tmp {
+    rect: Rectangle,
+    name: OsString,
+    size: u64,
+    is_file: bool,
+    file_count: usize,
+}
+
 fn recursive_compute_layout(
     tree: &RenderTree,
     mut base_position: (f32, f32),
     mut base_size: (f32, f32),
     aspect_ratio: f32,
     out: &mut Vec<Instance>,
-    mut level_out: Option<&mut Vec<(Rectangle, OsString, u64, bool)>>,
+    mut level_out: Option<&mut Vec<Tmp>>,
 ) {
     match tree {
         RenderTree::File { color, .. } => {
@@ -209,17 +217,22 @@ fn recursive_compute_layout(
                     };
 
                     if let Some(ref mut level_out) = level_out {
-                        level_out.push((
-                            Rectangle {
+                        let (is_file, file_count) = match child {
+                            RenderTree::File { .. } => (true, 0usize),
+                            RenderTree::Dir { files, .. } => (false, *files),
+                        };
+                        level_out.push(Tmp {
+                            rect: Rectangle {
                                 x: child_x,
                                 y: child_y * aspect_ratio,
                                 dx: child_dx,
                                 dy: child_dy * aspect_ratio,
                             },
-                            child.get_name().to_owned(),
-                            child.get_size(),
-                            matches!(child, RenderTree::File { .. }),
-                        ))
+                            name: child.get_name().to_owned(),
+                            size: child.get_size(),
+                            is_file,
+                            file_count,
+                        });
                     }
 
                     recursive_compute_layout(
@@ -268,7 +281,7 @@ struct App {
     path: PathBuf,
     base: PathBuf,
     current: usize,
-    level: Vec<(Rectangle, OsString, u64, bool)>,
+    level: Vec<Tmp>,
     font: FontArc,
 }
 
@@ -626,8 +639,13 @@ impl ApplicationHandler for App {
                 render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..render_data.instance_count);
 
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some((rect, name, size, is_file)) =
-                        self.level.iter().find(|e| e.0.overlaps(x, y))
+                    if let Some(Tmp {
+                        rect,
+                        name,
+                        size,
+                        is_file,
+                        file_count,
+                    }) = self.level.iter().find(|e| e.rect.overlaps(x, y))
                     {
                         render_pass.set_pipeline(&render_data.pipeline2);
                         render_data.queue.write_buffer(
@@ -642,7 +660,7 @@ impl ApplicationHandler for App {
                         );
                         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
 
-                        let text_str = entry_description(name, *is_file, *size);
+                        let text_str = entry_description(name, *is_file, *size, *file_count);
                         let scale_x = render_data.config.width as f32 / 1920.0;
                         let scale_y = render_data.config.height as f32 / 1080.0;
                         let text_scale = 32.0 * scale_x.min(scale_y);
@@ -709,7 +727,9 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some((_, name, ..)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                    if let Some(Tmp { name, .. }) =
+                        self.level.iter().find(|e| e.rect.overlaps(x, y))
+                    {
                         let children = match self.data[self.current] {
                             RenderTree::Dir { children, .. } => children,
                             RenderTree::File { .. } => unreachable!(),
@@ -727,7 +747,9 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 if let Some((x, y)) = render_data.cursor {
-                    if let Some((_, name, ..)) = self.level.iter().find(|e| e.0.overlaps(x, y)) {
+                    if let Some(Tmp { name, .. }) =
+                        self.level.iter().find(|e| e.rect.overlaps(x, y))
+                    {
                         let path = self
                             .base
                             .join(

@@ -18,6 +18,8 @@ pub enum ScanTree {
         name: OsString,
         size: u64,
         children: Vec<ScanTree>,
+        #[cfg(feature = "count_files")]
+        files: usize,
     },
     File {
         name: OsString,
@@ -156,6 +158,14 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
     ScanTree::Dir {
         name: entry.components().next_back().unwrap().as_os_str().into(),
         size: results.iter().map(|e| e.get_size()).sum(),
+        #[cfg(feature = "count_files")]
+        files: results
+            .iter()
+            .map(|e| match e {
+                ScanTree::Dir { files, .. } => *files,
+                ScanTree::File { .. } => 1usize,
+            })
+            .sum::<usize>(),
         children: results,
     }
 }
