@@ -10,7 +10,7 @@ phf = { version = "0.12.1", features = ["macros"] }
 pollster = "0.4.0"
 wgpu = "26.0.1"
 winit = "0.30.11"
-fs_tree_shared = { path = "../shared", features = ["metadata_timestamps", "ignore_zero"] }
+fs_tree_shared = { path = "../shared", features = ["metadata_timestamps", "ignore_zero", "count_files"] }
 fontdb = "0.23.0"
 glyph_brush = "0.7.12"
 ab_glyph = "0.2.31"
@@ -18,5 +18,5 @@ wgpu_text = "26.0.0"
 open = "5.3.2"
 
 [target.'cfg(target_family = "unix")'.dependencies]
-fs_tree_shared = { path = "../shared", features = ["metadata_ownership", "metadata_timestamps", "ignore_zero", "count_files"] }
+fs_tree_shared = { path = "../shared", features = ["metadata_ownership"] }
 nix = { version = "0.30.1", features = ["user"] }
