@@ -789,6 +789,11 @@ struct Args {
     /// Color mode
     #[clap(default_value = "extension")]
     color: ColorMode,
+
+    /// Whether to go through filesystem boundaries.
+    #[cfg(target_family = "unix")]
+    #[arg(long, short)]
+    cross_fs: bool,
 }
 
 fn main() {
@@ -799,8 +804,27 @@ fn main() {
 
     let font = get_font().expect("Could not find any font.");
 
+    #[cfg(target_family = "unix")]
+    let dev_id = if args.cross_fs {
+        None
+    } else {
+        use std::os::unix::fs::MetadataExt;
+
+        Some(match args.entrypoint.metadata() {
+            Ok(m) => m.dev(),
+            Err(err) => {
+                eprintln!("Error getting dev_id: {err}");
+                return;
+            }
+        })
+    };
+
     let render_tree = RenderTree::from_scan_tree(
-        scan_dir(&args.entrypoint),
+        scan_dir(
+            &args.entrypoint,
+            #[cfg(target_family = "unix")]
+            dev_id,
+        ),
         &args.color,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

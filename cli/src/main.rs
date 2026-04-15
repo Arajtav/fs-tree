@@ -14,12 +14,36 @@ struct Args {
     /// Whether the generated json should be formatted.
     #[arg(long, short)]
     pretty: bool,
+
+    /// Whether to go through filesystem boundaries
+    #[cfg(target_family = "unix")]
+    #[arg(long, short)]
+    cross_fs: bool,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let scanned = ExportTree::from(scan_dir(&args.entrypoint));
+    #[cfg(target_family = "unix")]
+    let dev_id = if args.cross_fs {
+        None
+    } else {
+        use std::os::unix::fs::MetadataExt;
+
+        Some(match args.entrypoint.metadata() {
+            Ok(m) => m.dev(),
+            Err(err) => {
+                eprintln!("Error getting dev_id: {err}");
+                return;
+            }
+        })
+    };
+
+    let scanned = ExportTree::from(scan_dir(
+        &args.entrypoint,
+        #[cfg(target_family = "unix")]
+        dev_id,
+    ));
 
     let result = if args.pretty {
         serde_json::to_string_pretty(&scanned)

@@ -5,7 +5,6 @@ use std::{
     path::Path,
 };
 
-#[cfg(feature = "metadata_ownership")]
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::MetadataExt;
 
@@ -46,7 +45,7 @@ impl ScanTree {
     }
 }
 
-pub fn scan_dir(entry: &Path) -> ScanTree {
+pub fn scan_dir(entry: &Path, #[cfg(target_family = "unix")] dev_id: Option<u64>) -> ScanTree {
     let dir = match fs::read_dir(entry) {
         Ok(dir) => dir,
         Err(err) => {
@@ -86,6 +85,13 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                     return None;
                 }
             };
+
+            #[cfg(target_family = "unix")]
+            if let Some(id) = dev_id {
+                if id != metadata.dev() {
+                    return None;
+                }
+            }
 
             if metadata.is_symlink() {
                 return None;
@@ -144,7 +150,11 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                 });
             }
 
-            let child = scan_dir(&entry.path());
+            let child = scan_dir(
+                &entry.path(),
+                #[cfg(target_family = "unix")]
+                dev_id,
+            );
 
             #[cfg(feature = "ignore_zero")]
             if child.get_size() == 0 {

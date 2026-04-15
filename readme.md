@@ -16,6 +16,8 @@ CLI version is a simple program that scans your filesystem from given directory,
 
 Usage: `fs_tree_cli [ENTRYPOINT]`. The entry point defaults to `.`. You can use the CLI with `-p` to format generated json. For more flags see `fs_tree_cli --help`.
 
+By default, on unix, the scan won't cross filesystem boundaries, use `-c` to do that.
+
 ## App usage
 
 App works the same as CLI, except instead of outputting the scan results to stdout, it renders them as a treemap. As you hover over the files and directories the information about them will show up.
