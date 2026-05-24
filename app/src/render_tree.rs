@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use fs_tree_shared::ScanTree;
+use fs_tree_shared::{SavedTree, ScanTree};
 use std::{
     ffi::{OsStr, OsString},
     path::Path,
@@ -9,7 +9,7 @@ use std::{
 use crate::colors::get_color_from_id;
 use crate::{colors::get_color_from_age, extensions::get_color_from_extension};
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 #[clap(rename_all = "lower")]
 pub enum ColorMode {
     Access,
@@ -48,6 +48,39 @@ impl RenderTree {
         match self {
             RenderTree::Dir { name, .. } => name,
             RenderTree::File { name, .. } => name,
+        }
+    }
+
+    pub fn from_saved_tree(tree: SavedTree) -> Self {
+        match tree {
+            SavedTree::File { size, name } => {
+                let color =
+                    get_color_from_extension(Path::new(&name).extension().unwrap_or_default());
+
+                let name = name.into();
+
+                RenderTree::File { size, name, color }
+            }
+            SavedTree::Dir {
+                size,
+                name,
+                children,
+            } => {
+                let files = children.len();
+                let children = children
+                    .into_iter()
+                    .map(RenderTree::from_saved_tree)
+                    .collect();
+
+                let name = name.into();
+
+                RenderTree::Dir {
+                    size,
+                    name,
+                    files,
+                    children,
+                }
+            }
         }
     }
 

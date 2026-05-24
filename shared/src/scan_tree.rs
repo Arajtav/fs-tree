@@ -46,27 +46,8 @@ impl ScanTree {
     }
 }
 
-pub fn scan_dir(entry: &Path) -> ScanTree {
-    let dir = match fs::read_dir(entry) {
-        Ok(dir) => dir,
-        Err(err) => {
-            eprintln!("Error reading directory {entry:?}: {err}");
-            return ScanTree::File {
-                size: 0,
-                name: "".into(),
-                #[cfg(feature = "metadata_timestamps")]
-                access: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                creation: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                modification: 0,
-                #[cfg(feature = "metadata_ownership")]
-                uid: 0,
-                #[cfg(feature = "metadata_ownership")]
-                gid: 0,
-            };
-        }
-    };
+pub fn scan_dir(entry: &Path) -> std::io::Result<ScanTree> {
+    let dir = fs::read_dir(entry)?;
 
     let mut results: Vec<ScanTree> = dir
         .par_bridge()
@@ -144,18 +125,20 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
                 });
             }
 
-            let child = scan_dir(&entry.path());
+            let child = scan_dir(&entry.path()).ok();
 
             #[cfg(feature = "ignore_zero")]
-            if child.get_size() == 0 {
+            if let Some(child) = &child
+                && child.get_size() == 0
+            {
                 return None;
             }
 
-            Some(child)
+            child
         })
         .collect();
     results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
-    ScanTree::Dir {
+    Ok(ScanTree::Dir {
         name: entry.components().next_back().unwrap().as_os_str().into(),
         size: results.iter().map(|e| e.get_size()).sum(),
         #[cfg(feature = "count_files")]
@@ -167,5 +150,5 @@ pub fn scan_dir(entry: &Path) -> ScanTree {
             })
             .sum::<usize>(),
         children: results,
-    }
+    })
 }

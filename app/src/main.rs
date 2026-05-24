@@ -15,7 +15,7 @@ use clap::Parser;
 use fs_tree_shared::scan_dir;
 use glyph_brush::{HorizontalAlign, Layout, Section, Text, VerticalAlign};
 use render_tree::{ColorMode, RenderTree};
-use wgpu::{util::DeviceExt, DeviceDescriptor, PowerPreference, SurfaceConfiguration};
+use wgpu::{DeviceDescriptor, PowerPreference, SurfaceConfiguration, util::DeviceExt};
 use wgpu_text::{BrushBuilder, TextBrush};
 use winit::{
     application::ApplicationHandler,
@@ -638,72 +638,71 @@ impl ApplicationHandler for App {
                 );
                 render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..render_data.instance_count);
 
-                if let Some((x, y)) = render_data.cursor {
-                    if let Some(Tmp {
+                if let Some((x, y)) = render_data.cursor
+                    && let Some(Tmp {
                         rect,
                         name,
                         size,
                         is_file,
                         file_count,
                     }) = self.level.iter().find(|e| e.rect.overlaps(x, y))
-                    {
-                        render_pass.set_pipeline(&render_data.pipeline2);
-                        render_data.queue.write_buffer(
-                            &render_data.vertex_buffer2,
-                            0,
-                            bytemuck::cast_slice(&rect.to_vertices()),
+                {
+                    render_pass.set_pipeline(&render_data.pipeline2);
+                    render_data.queue.write_buffer(
+                        &render_data.vertex_buffer2,
+                        0,
+                        bytemuck::cast_slice(&rect.to_vertices()),
+                    );
+                    render_pass.set_vertex_buffer(0, render_data.vertex_buffer2.slice(..));
+                    render_pass.set_index_buffer(
+                        render_data.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                    render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+
+                    let text_str = entry_description(name, *is_file, *size, *file_count);
+                    let scale_x = render_data.config.width as f32 / 1920.0;
+                    let scale_y = render_data.config.height as f32 / 1080.0;
+                    let text_scale = 32.0 * scale_x.min(scale_y);
+                    let text_scale = text_scale.clamp(12.0, 96.0);
+                    let text = Text::new(&text_str).with_scale(text_scale);
+                    let pos = rect.get_center();
+                    let mut pos = (
+                        pos.0 * render_data.config.width as f32,
+                        (1.0 - pos.1) * render_data.config.height as f32,
+                    );
+                    let section = Section::default()
+                        .add_text(text)
+                        .with_screen_position(pos)
+                        .with_layout(
+                            Layout::default()
+                                .h_align(HorizontalAlign::Center)
+                                .v_align(VerticalAlign::Center),
                         );
-                        render_pass.set_vertex_buffer(0, render_data.vertex_buffer2.slice(..));
-                        render_pass.set_index_buffer(
-                            render_data.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint16,
-                        );
-                        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
 
-                        let text_str = entry_description(name, *is_file, *size, *file_count);
-                        let scale_x = render_data.config.width as f32 / 1920.0;
-                        let scale_y = render_data.config.height as f32 / 1080.0;
-                        let text_scale = 32.0 * scale_x.min(scale_y);
-                        let text_scale = text_scale.clamp(12.0, 96.0);
-                        let text = Text::new(&text_str).with_scale(text_scale);
-                        let pos = rect.get_center();
-                        let mut pos = (
-                            pos.0 * render_data.config.width as f32,
-                            (1.0 - pos.1) * render_data.config.height as f32,
-                        );
-                        let section = Section::default()
-                            .add_text(text)
-                            .with_screen_position(pos)
-                            .with_layout(
-                                Layout::default()
-                                    .h_align(HorizontalAlign::Center)
-                                    .v_align(VerticalAlign::Center),
-                            );
-
-                        const PADDING: f32 = 12.0;
-                        let bounds = render_data.brush.glyph_bounds(&section).unwrap();
-                        if bounds.min.x < PADDING {
-                            pos.0 -= bounds.min.x - PADDING;
-                        } else if bounds.max.x > render_data.config.width as f32 - PADDING {
-                            pos.0 -= bounds.max.x - (render_data.config.width as f32 - PADDING);
-                        }
-                        if bounds.min.y < PADDING {
-                            pos.1 -= bounds.min.y - PADDING;
-                        } else if bounds.max.y > render_data.config.height as f32 - PADDING {
-                            pos.1 -= bounds.max.y - (render_data.config.height as f32 - PADDING);
-                        }
-
-                        render_data
-                            .brush
-                            .queue(
-                                &render_data.device,
-                                &render_data.queue,
-                                [&section.with_screen_position(pos)],
-                            )
-                            .unwrap();
-
-                        render_data.brush.draw(&mut render_pass);
+                    const PADDING: f32 = 12.0;
+                    let bounds = render_data.brush.glyph_bounds(&section).unwrap();
+                    if bounds.min.x < PADDING {
+                        pos.0 -= bounds.min.x - PADDING;
+                    } else if bounds.max.x > render_data.config.width as f32 - PADDING {
+                        pos.0 -= bounds.max.x - (render_data.config.width as f32 - PADDING);
                     }
+                    if bounds.min.y < PADDING {
+                        pos.1 -= bounds.min.y - PADDING;
+                    } else if bounds.max.y > render_data.config.height as f32 - PADDING {
+                        pos.1 -= bounds.max.y - (render_data.config.height as f32 - PADDING);
+                    }
+
+                    render_data
+                        .brush
+                        .queue(
+                            &render_data.device,
+                            &render_data.queue,
+                            [&section.with_screen_position(pos)],
+                        )
+                        .unwrap();
+
+                    render_data.brush.draw(&mut render_pass);
                 }
                 drop(render_pass);
 
@@ -726,18 +725,17 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let Some((x, y)) = render_data.cursor {
-                    if let Some(Tmp { name, .. }) =
+                if let Some((x, y)) = render_data.cursor
+                    && let Some(Tmp { name, .. }) =
                         self.level.iter().find(|e| e.rect.overlaps(x, y))
-                    {
-                        let children = match self.data[self.current] {
-                            RenderTree::Dir { children, .. } => children,
-                            RenderTree::File { .. } => unreachable!(),
-                        };
-                        let child = children.iter().find(|e| e.get_name() == name).unwrap();
-                        if let RenderTree::Dir { .. } = child {
-                            self.go_next(child, name.clone());
-                        }
+                {
+                    let children = match self.data[self.current] {
+                        RenderTree::Dir { children, .. } => children,
+                        RenderTree::File { .. } => unreachable!(),
+                    };
+                    let child = children.iter().find(|e| e.get_name() == name).unwrap();
+                    if let RenderTree::Dir { .. } = child {
+                        self.go_next(child, name.clone());
                     }
                 }
             }
@@ -746,22 +744,21 @@ impl ApplicationHandler for App {
                 button: MouseButton::Middle,
                 ..
             } => {
-                if let Some((x, y)) = render_data.cursor {
-                    if let Some(Tmp { name, .. }) =
+                if let Some((x, y)) = render_data.cursor
+                    && let Some(Tmp { name, .. }) =
                         self.level.iter().find(|e| e.rect.overlaps(x, y))
-                    {
-                        let path = self
-                            .base
-                            .join(
-                                self.path
-                                    .components()
-                                    .take(self.current)
-                                    .collect::<PathBuf>(),
-                            )
-                            .join(name);
-                        if open::that_detached(&path).is_err() {
-                            eprintln!("failed to open {path:?}")
-                        }
+                {
+                    let path = self
+                        .base
+                        .join(
+                            self.path
+                                .components()
+                                .take(self.current)
+                                .collect::<PathBuf>(),
+                        )
+                        .join(name);
+                    if open::that_detached(&path).is_err() {
+                        eprintln!("failed to open {path:?}")
                     }
                 }
             }
@@ -799,18 +796,55 @@ fn main() {
 
     let font = get_font().expect("Could not find any font.");
 
-    let render_tree = RenderTree::from_scan_tree(
-        scan_dir(&args.entrypoint),
-        &args.color,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64,
-        #[cfg(target_family = "unix")]
-        nix::unistd::getuid().into(),
-        #[cfg(target_family = "unix")]
-        nix::unistd::getgid().into(),
-    );
+    let meta = match std::fs::metadata(&args.entrypoint) {
+        Ok(meta) => meta,
+        Err(_) => {
+            eprintln!("Error reading {:?}", args.entrypoint);
+            return;
+        }
+    };
+
+    let render_tree = if meta.is_dir() {
+        let scan = match scan_dir(&args.entrypoint) {
+            Ok(scan) => scan,
+            Err(err) => {
+                eprintln!("Error reading directory {:?}: {err}", args.entrypoint);
+                return;
+            }
+        };
+
+        RenderTree::from_scan_tree(
+            scan,
+            &args.color,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
+            #[cfg(target_family = "unix")]
+            nix::unistd::getuid().into(),
+            #[cfg(target_family = "unix")]
+            nix::unistd::getgid().into(),
+        )
+    } else {
+        let file = match std::fs::File::open(&args.entrypoint) {
+            Ok(file) => file,
+            Err(_) => {
+                eprintln!("Error opening {:?}", args.entrypoint);
+                return;
+            }
+        };
+
+        let Ok(tree) = serde_json::from_reader(file) else {
+            eprintln!("{:?} is invalid", args.entrypoint);
+            return;
+        };
+
+        if args.color != ColorMode::Extension {
+            eprintln!("Unavailable color mode selected, falling back to Extension");
+        }
+
+        RenderTree::from_saved_tree(tree)
+    };
 
     let static_tree: &'static RenderTree = Box::leak(Box::new(render_tree));
     let mut app = App::new(static_tree, font, args.entrypoint);

@@ -1,13 +1,14 @@
-use fs_tree_shared::ScanTree;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize)]
+use crate::ScanTree;
+
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum ExportTree {
+pub enum SavedTree {
     Dir {
         name: String,
         size: u64,
-        children: Vec<ExportTree>,
+        children: Vec<SavedTree>,
     },
     File {
         name: String,
@@ -15,10 +16,10 @@ pub enum ExportTree {
     },
 }
 
-impl From<ScanTree> for ExportTree {
+impl From<ScanTree> for SavedTree {
     fn from(tree: ScanTree) -> Self {
         match tree {
-            ScanTree::File { size, name, .. } => ExportTree::File {
+            ScanTree::File { size, name, .. } => SavedTree::File {
                 size,
                 name: name.to_string_lossy().into(),
             },
@@ -27,9 +28,9 @@ impl From<ScanTree> for ExportTree {
                 name,
                 children,
                 ..
-            } => ExportTree::Dir {
+            } => SavedTree::Dir {
                 size,
-                children: children.into_iter().map(ExportTree::from).collect(),
+                children: children.into_iter().map(SavedTree::from).collect(),
                 name: name.to_string_lossy().into(),
             },
         }

@@ -1,8 +1,5 @@
-mod export_tree;
-
 use clap::Parser;
-use export_tree::ExportTree;
-use fs_tree_shared::scan_dir;
+use fs_tree_shared::{SavedTree, scan_dir};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -19,7 +16,15 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let scanned = ExportTree::from(scan_dir(&args.entrypoint));
+    let scan = match scan_dir(&args.entrypoint) {
+        Ok(scan) => scan,
+        Err(err) => {
+            eprintln!("Error reading directory {:?}: {err}", args.entrypoint);
+            return;
+        }
+    };
+
+    let scanned = SavedTree::from(scan);
 
     let result = if args.pretty {
         serde_json::to_string_pretty(&scanned)

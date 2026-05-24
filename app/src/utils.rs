@@ -49,19 +49,19 @@ pub fn get_font() -> Option<FontArc> {
         ..Default::default()
     };
 
-    if let Some(id) = db.query(&query) {
-        if let Some((font, _)) = db.face_source(id) {
-            match font {
-                Source::File(path) => {
-                    if let Ok(bytes) = std::fs::read(path) {
-                        return FontArc::try_from_vec(bytes).ok();
-                    }
+    if let Some(id) = db.query(&query)
+        && let Some((font, _)) = db.face_source(id)
+    {
+        match font {
+            Source::File(path) => {
+                if let Ok(bytes) = std::fs::read(path) {
+                    return FontArc::try_from_vec(bytes).ok();
                 }
-                Source::Binary(data) => {
-                    return FontArc::try_from_vec(data.as_ref().as_ref().to_owned()).ok();
-                }
-                _ => {}
             }
+            Source::Binary(data) => {
+                return FontArc::try_from_vec(data.as_ref().as_ref().to_owned()).ok();
+            }
+            _ => {}
         }
     }
 
