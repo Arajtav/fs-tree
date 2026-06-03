@@ -62,25 +62,21 @@ impl RenderTree {
             ScanTree::File {
                 size,
                 name,
-                access,
-                creation,
-                modification,
+                timestamps,
                 #[cfg(target_family = "unix")]
-                uid,
-                #[cfg(target_family = "unix")]
-                gid,
+                ownership,
             } => {
                 let color = match color_mode {
-                    ColorMode::Access => get_color_from_age(now, access),
-                    ColorMode::Creation => get_color_from_age(now, creation),
-                    ColorMode::Modification => get_color_from_age(now, modification),
+                    ColorMode::Access => get_color_from_age(now, timestamps.access),
+                    ColorMode::Creation => get_color_from_age(now, timestamps.creation),
+                    ColorMode::Modification => get_color_from_age(now, timestamps.modification),
                     ColorMode::Extension => {
                         get_color_from_extension(Path::new(&name).extension().unwrap_or_default())
                     }
                     #[cfg(target_family = "unix")]
-                    ColorMode::User => get_color_from_id(uid, cuid),
+                    ColorMode::User => get_color_from_id(ownership.uid, cuid),
                     #[cfg(target_family = "unix")]
-                    ColorMode::Group => get_color_from_id(gid, cgid),
+                    ColorMode::Group => get_color_from_id(ownership.gid, cgid),
                 };
 
                 RenderTree::File { size, name, color }
@@ -96,6 +92,7 @@ impl RenderTree {
                     .into_iter()
                     .map(|e| RenderTree::from_scan_tree(e, color_mode, now, cuid, cgid))
                     .collect();
+
                 #[cfg(target_family = "windows")]
                 let children = children
                     .into_iter()

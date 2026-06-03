@@ -8,9 +8,23 @@ use std::{
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::MetadataExt;
 
-#[cfg(any(feature = "metadata_timestamps", feature = "metadata_ownership"))]
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::MetadataExt;
+
+#[cfg(feature = "metadata_timestamps")]
+#[derive(Default)]
+pub struct MetaTimestamps {
+    pub access: i64,
+    pub creation: i64,
+    pub modification: i64,
+}
+
+#[cfg(feature = "metadata_ownership")]
+#[derive(Default)]
+pub struct MetaOwnership {
+    pub uid: u32,
+    pub gid: u32,
+}
 
 pub enum ScanTree {
     Dir {
@@ -24,15 +38,9 @@ pub enum ScanTree {
         name: OsString,
         size: u64,
         #[cfg(feature = "metadata_timestamps")]
-        access: i64,
-        #[cfg(feature = "metadata_timestamps")]
-        creation: i64,
-        #[cfg(feature = "metadata_timestamps")]
-        modification: i64,
+        timestamps: MetaTimestamps,
         #[cfg(feature = "metadata_ownership")]
-        uid: u32,
-        #[cfg(feature = "metadata_ownership")]
-        gid: u32,
+        ownership: MetaOwnership,
     },
 }
 
@@ -54,15 +62,9 @@ pub fn scan_dir(entry: &Path, #[cfg(target_family = "unix")] dev_id: Option<u64>
                 size: 0,
                 name: "".into(),
                 #[cfg(feature = "metadata_timestamps")]
-                access: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                creation: 0,
-                #[cfg(feature = "metadata_timestamps")]
-                modification: 0,
+                timestamps: MetaTimestamps::default(),
                 #[cfg(feature = "metadata_ownership")]
-                uid: 0,
-                #[cfg(feature = "metadata_ownership")]
-                gid: 0,
+                ownership: MetaOwnership::default(),
             };
         }
     };
@@ -106,47 +108,61 @@ pub fn scan_dir(entry: &Path, #[cfg(target_family = "unix")] dev_id: Option<u64>
                 }
 
                 #[cfg(feature = "metadata_timestamps")]
-                #[cfg(target_family = "unix")]
-                let (access, creation, modification) =
-                    (metadata.atime(), metadata.ctime(), metadata.mtime());
-
-                #[cfg(feature = "metadata_timestamps")]
-                #[cfg(target_family = "windows")]
-                let (access, creation, modification) = {
-                    fn to_unix_time(filetime: u64) -> i64 {
-                        const EPOCH_DIFFERENCE: i64 = 11644473600;
-                        (filetime as i64 / 10000000).saturating_sub(EPOCH_DIFFERENCE)
+                let timestamps = {
+                    #[cfg(target_family = "unix")]
+                    {
+                        MetaTimestamps {
+                            access: metadata.atime(),
+                            creation: metadata.ctime(),
+                            modification: metadata.mtime(),
+                        }
                     }
-                    (
-                        to_unix_time(metadata.last_access_time()),
-                        to_unix_time(metadata.creation_time()),
-                        to_unix_time(metadata.last_write_time()),
-                    )
+
+                    #[cfg(target_family = "windows")]
+                    {
+                        fn to_unix_time(filetime: u64) -> i64 {
+                            const EPOCH_DIFFERENCE: i64 = 11644473600;
+                            (filetime as i64 / 10000000).saturating_sub(EPOCH_DIFFERENCE)
+                        }
+
+                        MetaTimestamps {
+                            access: to_unix_time(metadata.last_access_time()),
+                            creation: to_unix_time(metadata.creation_time()),
+                            modification: to_unix_time(metadata.last_write_time()),
+                        }
+                    }
                 };
 
-                #[cfg(all(feature = "metadata_ownership", not(target_family = "unix")))]
-                compile_error!(
-                    "The `metadata_ownership` feature is only available on Unix like systems"
-                );
-                #[cfg(all(feature = "metadata_ownership", not(target_family = "unix")))]
-                let (uid, gid) = (0, 0);
+                #[cfg(feature = "metadata_ownership")]
+                let ownership = {
+                    #[cfg(target_family = "unix")]
+                    {
+                        MetaOwnership {
+                            uid: metadata.uid(),
+                            gid: metadata.gid(),
+                        }
+                    }
 
-                #[cfg(all(feature = "metadata_ownership", target_family = "unix"))]
-                let (uid, gid) = (metadata.uid(), metadata.gid());
+                    #[cfg(not(target_family = "unix"))]
+                    {
+                        compile_error!(
+                            "The `metadata_ownership` feature is only available on Unix like systems"
+                        );
+
+                        MetaOwnership {
+                            uid: 0,
+                            gid: 0,
+                        }
+                    }
+                };
 
                 return Some(ScanTree::File {
                     size: len,
                     name: entry.file_name(),
                     #[cfg(feature = "metadata_timestamps")]
-                    access,
-                    #[cfg(feature = "metadata_timestamps")]
-                    creation,
-                    #[cfg(feature = "metadata_timestamps")]
-                    modification,
+                    timestamps,
                     #[cfg(feature = "metadata_ownership")]
-                    uid,
-                    #[cfg(feature = "metadata_ownership")]
-                    gid,
+                    ownership
                 });
             }
 
@@ -164,7 +180,10 @@ pub fn scan_dir(entry: &Path, #[cfg(target_family = "unix")] dev_id: Option<u64>
             Some(child)
         })
         .collect();
+
+    #[cfg(feature = "sort")]
     results.sort_unstable_by_key(|e| std::cmp::Reverse(e.get_size()));
+
     ScanTree::Dir {
         name: entry.components().next_back().unwrap().as_os_str().into(),
         size: results.iter().map(|e| e.get_size()).sum(),

@@ -12,6 +12,7 @@ metadata_ownership = []
 full_metadata = ["metadata_timestamps", "metadata_ownership"]
 ignore_zero = []
 count_files = []
+sort = []
 
 [dependencies]
 rayon = "1.10.0"
